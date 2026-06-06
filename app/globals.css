@@ -396,7 +396,23 @@
   }
 
   .ds-modal-body {
-    @apply px-5 sm:px-6 py-5 overflow-y-auto flex-1 min-h-0 scrollbar-thin;
+    @apply px-5 sm:px-6 py-5 overflow-y-auto flex-1 min-h-0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
+  }
+
+  .ds-modal-body::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .ds-modal-body::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .ds-modal-body::-webkit-scrollbar-thumb {
+    background-color: var(--muted);
+    border-radius: 3px;
   }
 
   .ds-modal-footer {
