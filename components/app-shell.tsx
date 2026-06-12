@@ -183,28 +183,17 @@ export function AppShell({ children }: AppShellProps) {
         >
           {!fullBleed && (
             <header className="z-30 shrink-0 ds-mobile-header lg:px-6 xl:px-8">
-              <div className="flex items-center justify-between gap-2 sm:gap-3 w-full min-w-0">
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={openNav}
-                    className="ds-btn-icon ds-btn-ghost lg:hidden"
-                    aria-label="Open navigation"
-                  >
-                    <Menu size={20} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={toggleSidebarCollapsed}
-                    className="ds-btn-icon ds-btn-ghost hidden lg:inline-flex"
-                    aria-label={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                    title={railCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                  >
-                    {railCollapsed ? <PanelLeft size={18} /> : <PanelLeftClose size={18} />}
-                  </button>
-                </div>
+              <div className="flex items-center justify-end gap-2 sm:gap-3 w-full min-w-0">
+                <button
+                  type="button"
+                  onClick={openNav}
+                  className="ds-btn-icon ds-btn-ghost lg:hidden shrink-0 mr-auto"
+                  aria-label="Open navigation"
+                >
+                  <Menu size={20} />
+                </button>
 
-                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-auto min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 min-w-0">
                   <div
                     className="flex items-center gap-1.5 h-8 max-w-[11rem] sm:max-w-[14rem] px-2 sm:px-3 rounded-md border border-border bg-card text-xs font-medium text-foreground min-w-0"
                     aria-label="Current role"
