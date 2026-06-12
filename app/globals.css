@@ -615,7 +615,23 @@
   }
 
   .ds-notifications-panel-body {
-    @apply max-h-[min(20rem,50vh)] overflow-y-auto overscroll-contain scrollbar-thin divide-y divide-border/70;
+    @apply max-h-[min(20rem,50vh)] overflow-y-auto overscroll-contain divide-y divide-border/70;
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
+  }
+
+  .ds-notifications-panel-body::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .ds-notifications-panel-body::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .ds-notifications-panel-body::-webkit-scrollbar-thumb {
+    background-color: var(--muted);
+    border-radius: 3px;
   }
 
   .ds-notification-item {
