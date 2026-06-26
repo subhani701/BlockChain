@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build artifacts
+build/
+dist/
+backend/dist/
+
+# Truffle
+.truffle/
+
+# Runtime data (in-memory store mirror)
+backend/data/
+**/data/*.json
+
+# Env
+.env
+**/.env
+!**/.env.example
+
+# Logs / misc
+*.log
+.DS_Store

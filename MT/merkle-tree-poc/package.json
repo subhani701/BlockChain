@@ -1,0 +1,34 @@
+{
+  "name": "merkle-tree-poc",
+  "version": "1.0.0",
+  "description": "Standalone PoC: Merkle Tree based product provenance & anti-counterfeit verification on Ethereum (Truffle + Ganache).",
+  "private": true,
+  "scripts": {
+    "compile": "truffle compile",
+    "migrate": "truffle migrate --network ganache --reset",
+    "test": "truffle test --network ganache",
+    "console": "truffle console --network ganache",
+    "backend": "npm --prefix backend run dev",
+    "frontend": "npm --prefix frontend run dev",
+    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install"
+  },
+  "keywords": [
+    "ethereum",
+    "merkle-tree",
+    "truffle",
+    "ganache",
+    "provenance",
+    "supply-chain"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@openzeppelin/contracts": "^5.0.2",
+    "@truffle/hdwallet-provider": "^2.1.15",
+    "truffle": "^5.11.5"
+  },
+  "dependencies": {
+    "ethers": "^6.13.4",
+    "keccak256": "^1.0.6",
+    "merkletreejs": "^0.4.0"
+  }
+}
