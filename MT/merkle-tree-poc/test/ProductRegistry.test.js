@@ -16,22 +16,25 @@
  */
 const { MerkleTree } = require("merkletreejs");
 const keccak256 = require("keccak256");
-const { solidityPackedKeccak256 } = require("ethers");
 
 const ProductRegistry = artifacts.require("ProductRegistry");
 
 // --- Off-chain helpers (mirror shared/hash.ts + shared/merkle.ts) -----------
 
-function hashProduct(p) {
-  // keccak256(abi.encodePacked(productId, serialNumber, batchId, manufactureDate))
-  return solidityPackedKeccak256(
-    ["string", "string", "string", "uint256"],
-    [p.productId, p.serialNumber, p.batchId, p.manufactureDate]
-  );
-}
-
 const toBuf = (hex) => Buffer.from(hex.replace(/^0x/, ""), "hex");
 const toHex = (buf) => "0x" + buf.toString("hex");
+
+// leaf = keccak256(utf8(JSON.stringify({ serial, sku, batch_id, manufactured_at })))
+// — identical canonical serialization to shared/hash.ts (merkle.md §7-§10).
+function hashProduct(p) {
+  const canonical = JSON.stringify({
+    serial: p.serial,
+    sku: p.sku,
+    batch_id: p.batch_id,
+    manufactured_at: p.manufactured_at
+  });
+  return toHex(keccak256(Buffer.from(canonical, "utf8")));
+}
 
 function buildTree(leaves) {
   return new MerkleTree(leaves.map(toBuf), keccak256, {
@@ -45,10 +48,10 @@ function makeBatch(batchId, count) {
   for (let i = 1; i <= count; i++) {
     const seq = String(i).padStart(4, "0");
     products.push({
-      productId: `SKU-${seq}`,
-      serialNumber: `SN-${batchId}-${seq}`,
-      batchId,
-      manufactureDate: 1700000000 + i * 60
+      serial: `SN-${batchId}-${seq}`,
+      sku: "SKF-6205-2RS",
+      batch_id: batchId,
+      manufactured_at: new Date((1700000000 + i * 60) * 1000).toISOString()
     });
   }
   return products;
@@ -142,7 +145,7 @@ contract("ProductRegistry", (accounts) => {
     const proof = tree.getHexProof(hashProduct(original));
 
     // Tamper: change the serial number. The leaf hash changes completely.
-    const tampered = { ...original, serialNumber: "SN-FAKE-9999" };
+    const tampered = { ...original, serial: "SN-FAKE-9999" };
     const tamperedLeaf = hashProduct(tampered);
 
     // Using the ORIGINAL proof with the TAMPERED leaf must fail.
@@ -158,10 +161,10 @@ contract("ProductRegistry", (accounts) => {
     await registry.registerBatch(BATCH_ID, root, COUNT, { from: manufacturer });
 
     const fake = {
-      productId: "SKU-9999",
-      serialNumber: "SN-FORGED-0001",
-      batchId: BATCH_ID,
-      manufactureDate: 1700000000
+      serial: "SN-FORGED-0001",
+      sku: "SKF-6205-2RS",
+      batch_id: BATCH_ID,
+      manufactured_at: "2023-11-14T22:14:20.000Z"
     };
     const fakeLeaf = hashProduct(fake);
     // Borrow any real proof — it won't reconstruct the root for a fake leaf.

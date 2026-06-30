@@ -1,6 +1,6 @@
 /**
  * HashFlow — educational component showing the pipeline:
- *   Product  ->  Encoded Data (abi.encodePacked)  ->  keccak256 Hash (leaf)
+ *   Product  ->  Canonical JSON  ->  keccak256 Hash (leaf)
  */
 import type { Product } from "../api/client";
 
@@ -16,15 +16,15 @@ export function HashFlow({ product, encoded, leaf }: Props) {
       <div className="flow-step">
         <div className="flow-label">1 · Product</div>
         <div className="mono">
-          productId={product.productId} · serial={product.serialNumber} ·
-          batch={product.batchId} · date={product.manufactureDate}
+          serial={product.serial} · sku={product.sku} ·
+          batch={product.batch_id} · made={product.manufactured_at}
         </div>
       </div>
 
-      <div className="flow-arrow">↓ abi.encodePacked</div>
+      <div className="flow-arrow">↓ JSON.stringify (canonical, fixed key order)</div>
 
       <div className="flow-step">
-        <div className="flow-label">2 · Encoded Data (tightly packed)</div>
+        <div className="flow-label">2 · Canonical JSON (the bytes that get hashed)</div>
         <div className="mono">{encoded}</div>
       </div>
 

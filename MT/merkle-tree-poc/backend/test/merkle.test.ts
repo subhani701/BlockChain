@@ -32,14 +32,15 @@ describe("hashing", () => {
 
   it("avalanches: a one-field change yields a totally different leaf", () => {
     const a = batch.products[0];
-    const b: Product = { ...a, serialNumber: a.serialNumber + "X" };
+    const b: Product = { ...a, serial: a.serial + "X" };
     expect(hashProduct(a)).not.toBe(hashProduct(b));
   });
 
-  it("exposes a human-readable packed encoding", () => {
+  it("exposes the canonical JSON that gets hashed", () => {
     const enc = encodeProductForDisplay(batch.products[0]);
-    expect(enc).toContain("string:SKU-0001");
-    expect(enc).toContain("uint256:");
+    expect(enc).toContain('"serial":"SN-BATCH-001-0001"');
+    expect(enc).toContain('"sku":"SKF-6205-2RS"');
+    expect(enc).toContain('"batch_id":"BATCH-001"');
   });
 });
 
@@ -80,7 +81,7 @@ describe("tampering", () => {
     const original = batch.products[10];
     const proof = getProof(leaves, hashProduct(original));
 
-    const tampered: Product = { ...original, serialNumber: "SN-FAKE-9999" };
+    const tampered: Product = { ...original, serial: "SN-FAKE-9999" };
     const tamperedLeaf = hashProduct(tampered);
 
     expect(verifyProof(tamperedLeaf, proof, root)).toBe(false);
@@ -88,10 +89,10 @@ describe("tampering", () => {
 
   it("fails for a product that was never in the batch", () => {
     const fake: Product = {
-      productId: "SKU-9999",
-      serialNumber: "SN-FORGED",
-      batchId: "BATCH-001",
-      manufactureDate: 1700000000
+      serial: "SN-FORGED",
+      sku: "SKF-6205-2RS",
+      batch_id: "BATCH-001",
+      manufactured_at: "2023-11-14T22:14:20.000Z"
     };
     const someProof = getProof(leaves, hashProduct(batch.products[0]));
     expect(verifyProof(hashProduct(fake), someProof, root)).toBe(false);

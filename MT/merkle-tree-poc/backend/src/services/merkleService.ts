@@ -49,12 +49,12 @@ export function treeLevels(batch: Batch): MerkleLevel[] {
   return getLevels(leavesOf(batch));
 }
 
-/** Locate a product within a batch by its productId. */
+/** Locate a product within a batch by its (unique) serial number. */
 export function findProduct(
   batch: Batch,
-  productId: string
+  serial: string
 ): Product | undefined {
-  return batch.products.find((p) => p.productId === productId);
+  return batch.products.find((p) => p.serial === serial);
 }
 
 /**

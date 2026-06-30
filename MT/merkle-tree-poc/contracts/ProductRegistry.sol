@@ -126,8 +126,8 @@ contract ProductRegistry is Ownable {
      *      (useful for an auditable on-chain trail). For a free, read-only
      *      check use {verifyProductView} instead.
      *
-     *      The leaf MUST be computed exactly as:
-     *        keccak256(abi.encodePacked(productId, serialNumber, batchId, manufactureDate))
+     *      The leaf MUST be computed exactly as (off-chain, see shared/hash.ts):
+     *        keccak256(utf8(JSON.stringify({serial, sku, batch_id, manufactured_at})))
      *      and the tree MUST be built with sorted sibling pairs (merkletreejs
      *      `sortPairs: true`) so it matches OpenZeppelin's hashing convention.
      *

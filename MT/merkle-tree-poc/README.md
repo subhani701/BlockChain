@@ -48,7 +48,7 @@ Products  →  Leaf Hashes  →  Parent Hashes  →  Merkle Root  →  Ethereum
 ```
 
 - **Off-chain** (backend + `shared/`): generate batch, hash products
-  (`keccak256(abi.encodePacked(...))` via Ethers' `solidityPackedKeccak256`),
+  (`keccak256` of a canonical JSON of `{serial, sku, batch_id, manufactured_at}`),
   build the Merkle tree (`merkletreejs`), derive root + proofs.
 - **On-chain** (`ProductRegistry.sol`): store the root, verify proofs using
   OpenZeppelin's `MerkleProof`; the backend talks to it with **Ethers.js (v6)**.
@@ -158,7 +158,7 @@ The UI mirrors the conceptual lifecycle end to end:
 | Step | Page | What happens |
 |------|------|--------------|
 | 1 | Batch & Tree | Generate `BATCH-001` with N products (`SKU-0001…`). |
-| 2 | Batch & Tree | Each product → `abi.encodePacked` → `keccak256` **leaf**. |
+| 2 | Batch & Tree | Each product → canonical JSON → `keccak256` **leaf**. |
 | 3 | Batch & Tree | Build the Merkle tree, display every level + the **root**. |
 | 4 | Batch & Tree | **Register** only the root on Ethereum (see tx hash + gas). |
 | 5 | Proof | Pick a product → generate its **leaf + proof**, visualize the path. |
@@ -180,10 +180,10 @@ Base URL: `http://localhost:4000`
 | `GET`  | `/batch` | List batch summaries. |
 | `GET`  | `/batch/:batchId` | Full batch with hashed products + root. |
 | `GET`  | `/batch/:batchId/tree` | All Merkle levels (leaves → root). |
-| `GET`  | `/proof/:productId?batchId=…` | Leaf + proof + annotated steps + root. |
-| `POST` | `/verify` | `{ batchId, productId }` → on-chain `VALID`/`INVALID` + gas. |
+| `GET`  | `/proof/:serial?batchId=…` | Leaf + proof + annotated steps + root. |
+| `POST` | `/verify` | `{ batchId, serial }` → on-chain `VALID`/`INVALID` + gas. |
 | `POST` | `/verify/offchain` | Same, verified locally (no gas). |
-| `POST` | `/verify/tamper` | `{ batchId, productId, field, newValue }` → fails. |
+| `POST` | `/verify/tamper` | `{ batchId, serial, field, newValue }` → fails. |
 
 Example:
 
@@ -194,10 +194,10 @@ curl -X POST localhost:4000/batch/create -H 'content-type: application/json' \
 curl -X POST localhost:4000/batch/register -H 'content-type: application/json' \
   -d '{"batchId":"BATCH-001"}'
 
-curl 'localhost:4000/proof/SKU-0003?batchId=BATCH-001'
+curl 'localhost:4000/proof/SN-BATCH-001-0003?batchId=BATCH-001'
 
 curl -X POST localhost:4000/verify -H 'content-type: application/json' \
-  -d '{"batchId":"BATCH-001","productId":"SKU-0003"}'
+  -d '{"batchId":"BATCH-001","serial":"SN-BATCH-001-0003"}'
 ```
 
 ---
@@ -239,19 +239,22 @@ A **hash function** maps arbitrary input to a fixed-size output (a "digest" or
 family; Ethereum adopted it before the final NIST SHA3 padding tweak, so
 "keccak256" ≠ "SHA3-256"). It outputs **32 bytes** (256 bits).
 
-In Solidity:
+The leaf is built from the product fields with a **canonical JSON
+serialization** (aligned to the VoltusWave / SKF model and `merkle.md`):
 
-```solidity
-bytes32 leaf = keccak256(abi.encodePacked(productId, serialNumber, batchId, manufactureDate));
+```ts
+// shared/hash.ts — fixed key order: serial, sku, batch_id, manufactured_at
+const canonical = JSON.stringify({ serial, sku, batch_id, manufactured_at });
+const leaf = keccak256(toUtf8Bytes(canonical));   // 0x… 32-byte hash
 ```
 
-We reproduce this **exactly** off-chain with Ethers' `solidityPackedKeccak256`,
-which does `abi.encodePacked` + keccak256. (`abi.encodePacked` tightly
-concatenates the arguments with no padding.) **Why this matters:** the contract recomputes the
-root from a leaf you supply. If your off-chain leaf bytes differ even slightly
-from what Solidity would produce, the roots never match and verification always
-fails. Using Node's `crypto` SHA-256 or `JSON.stringify` would silently break
-everything — hence "Solidity-compatible hashing".
+**Why this matters:** the contract recomputes the root from a leaf you supply.
+If your off-chain leaf bytes differ even slightly, the roots never match and
+verification always fails. So the serialization must be **canonical** — same
+keys, same order, same whitespace — on every side (backend, tests, on-chain
+prover). The contract itself never reconstructs the leaf from fields; it only
+runs the sorted-pair climb (OpenZeppelin `MerkleProof`) over the 32-byte leaf,
+so a `keccak256`-of-JSON leaf is exactly what it expects.
 
 ### What is a Merkle Tree?
 

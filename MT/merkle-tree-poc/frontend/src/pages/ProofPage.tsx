@@ -19,7 +19,7 @@ export function ProofPage() {
 
   const [batchId, setBatchId] = useState(activeBatch || "BATCH-001");
   const [products, setProducts] = useState<HashedProduct[]>([]);
-  const [productId, setProductId] = useState("");
+  const [serial, setSerial] = useState("");
   const [proof, setProof] = useState<ProofResponse | null>(null);
   const [tree, setTree] = useState<TreeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +33,7 @@ export function ProofPage() {
     Promise.all([api.getBatch(batchId), api.getTree(batchId)])
       .then(([b, t]) => {
         setProducts(b.products);
-        setProductId(b.products[0]?.productId ?? "");
+        setSerial(b.products[0]?.serial ?? "");
         setTree(t);
       })
       .catch((e) => {
@@ -44,11 +44,11 @@ export function ProofPage() {
   }, [batchId]);
 
   async function onGenerateProof() {
-    if (!productId) return;
+    if (!serial) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await api.getProof(productId, batchId);
+      const res = await api.getProof(serial, batchId);
       setProof(res);
       setActiveBatch(batchId);
     } catch (e) {
@@ -77,17 +77,17 @@ export function ProofPage() {
           <div>
             <label>Product</label>
             <select
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
+              value={serial}
+              onChange={(e) => setSerial(e.target.value)}
             >
               {products.map((p) => (
-                <option key={p.productId} value={p.productId}>
-                  {p.productId} — {p.serialNumber}
+                <option key={p.serial} value={p.serial}>
+                  {p.serial} — {p.sku}
                 </option>
               ))}
             </select>
           </div>
-          <button onClick={onGenerateProof} disabled={busy || !productId}>
+          <button onClick={onGenerateProof} disabled={busy || !serial}>
             {busy ? "Generating…" : "Generate Proof"}
           </button>
         </div>
@@ -97,7 +97,7 @@ export function ProofPage() {
       {proof && (
         <>
           <div className="card">
-            <h2>Leaf for {proof.product.productId}</h2>
+            <h2>Leaf for {proof.product.serial}</h2>
             <HashFlow
               product={proof.product}
               encoded={proof.encoded}

@@ -13,10 +13,10 @@ const BASE =
 // ---- Types mirrored from shared/types.ts -----------------------------------
 
 export interface Product {
-  productId: string;
-  serialNumber: string;
-  batchId: string;
-  manufactureDate: number;
+  serial: string;
+  sku: string;
+  batch_id: string;
+  manufactured_at: string;
 }
 
 export interface HashedProduct extends Product {
@@ -161,35 +161,35 @@ export const api = {
       }>
     >("/batch"),
 
-  getProof: (productId: string, batchId: string) =>
+  getProof: (serial: string, batchId: string) =>
     http<ProofResponse>(
-      `/proof/${encodeURIComponent(productId)}?batchId=${encodeURIComponent(
+      `/proof/${encodeURIComponent(serial)}?batchId=${encodeURIComponent(
         batchId
       )}`
     ),
 
-  verifyOnChain: (batchId: string, productId: string) =>
+  verifyOnChain: (batchId: string, serial: string) =>
     http<VerifyResponse>("/verify", {
       method: "POST",
-      body: JSON.stringify({ batchId, productId })
+      body: JSON.stringify({ batchId, serial })
     }),
 
-  verifyOffChain: (batchId: string, productId: string) =>
+  verifyOffChain: (batchId: string, serial: string) =>
     http<VerifyResponse>("/verify/offchain", {
       method: "POST",
-      body: JSON.stringify({ batchId, productId })
+      body: JSON.stringify({ batchId, serial })
     }),
 
   tamper: (
     batchId: string,
-    productId: string,
+    serial: string,
     field: string,
     newValue: string,
     onChain: boolean
   ) =>
     http<TamperResponse>("/verify/tamper", {
       method: "POST",
-      body: JSON.stringify({ batchId, productId, field, newValue, onChain })
+      body: JSON.stringify({ batchId, serial, field, newValue, onChain })
     })
 };
 

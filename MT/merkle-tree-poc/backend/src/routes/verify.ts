@@ -25,7 +25,7 @@ export const verifyRouter = Router();
 
 /**
  * POST /verify
- * Body: { batchId: string, productId: string }
+ * Body: { batchId: string, serial: string }
  *   OR  { batchId: string, leaf: string, proof: string[] }
  *
  * Looks up (or accepts) the leaf+proof and asks the smart contract whether the
@@ -33,24 +33,24 @@ export const verifyRouter = Router();
  * plus the transaction details (gas used, tx hash).
  */
 verifyRouter.post("/", async (req: Request, res: Response) => {
-  const { batchId, productId } = req.body ?? {};
+  const { batchId, serial } = req.body ?? {};
   let { leaf, proof } = req.body ?? {};
 
   if (!batchId) {
     return res.status(400).json({ error: "batchId is required" });
   }
 
-  // If a productId is given, derive leaf+proof from the stored batch.
-  if (productId) {
+  // If a serial is given, derive leaf+proof from the stored batch.
+  if (serial) {
     const batch = store.get(batchId);
     if (!batch) {
       return res.status(404).json({ error: `batch ${batchId} not found` });
     }
-    const product = findProduct(batch, productId);
+    const product = findProduct(batch, serial);
     if (!product) {
       return res
         .status(404)
-        .json({ error: `product ${productId} not in batch ${batchId}` });
+        .json({ error: `product ${serial} not in batch ${batchId}` });
     }
     const built = buildProof(batch, product);
     leaf = built.leaf;
@@ -60,7 +60,7 @@ verifyRouter.post("/", async (req: Request, res: Response) => {
   if (!leaf || !Array.isArray(proof)) {
     return res
       .status(400)
-      .json({ error: "provide productId, or both leaf and proof[]" });
+      .json({ error: "provide serial, or both leaf and proof[]" });
   }
 
   try {
@@ -91,18 +91,18 @@ verifyRouter.post("/", async (req: Request, res: Response) => {
  * for instant UI feedback and for environments without Ganache.
  */
 verifyRouter.post("/offchain", (req: Request, res: Response) => {
-  const { batchId, productId } = req.body ?? {};
+  const { batchId, serial } = req.body ?? {};
   let { leaf, proof } = req.body ?? {};
 
   const batch = store.get(batchId);
   if (!batch) return res.status(404).json({ error: `batch ${batchId} not found` });
 
-  if (productId) {
-    const product = findProduct(batch, productId);
+  if (serial) {
+    const product = findProduct(batch, serial);
     if (!product) {
       return res
         .status(404)
-        .json({ error: `product ${productId} not in batch ${batchId}` });
+        .json({ error: `product ${serial} not in batch ${batchId}` });
     }
     const built = buildProof(batch, product);
     leaf = built.leaf;
@@ -112,7 +112,7 @@ verifyRouter.post("/offchain", (req: Request, res: Response) => {
   if (!leaf || !Array.isArray(proof)) {
     return res
       .status(400)
-      .json({ error: "provide productId, or both leaf and proof[]" });
+      .json({ error: "provide serial, or both leaf and proof[]" });
   }
 
   const { valid, merkleRoot } = verifyAgainstBatch(batch, leaf, proof);
@@ -128,37 +128,37 @@ verifyRouter.post("/offchain", (req: Request, res: Response) => {
 
 /**
  * POST /tamper  (Part 10 — Tampering Demo)
- * Body: { batchId, productId, field, newValue }
+ * Body: { batchId, serial, field, newValue }
  *
- * Takes a genuine product, applies a tamper to one field (default
- * serialNumber), recomputes its leaf, and re-runs verification using the
- * ORIGINAL product's proof. The result MUST be INVALID — demonstrating that any
- * change avalanches the hash and breaks the Merkle path.
+ * Takes a genuine product, applies a tamper to one field (default serial),
+ * recomputes its leaf, and re-runs verification using the ORIGINAL product's
+ * proof. The result MUST be INVALID — demonstrating that any change avalanches
+ * the hash and breaks the Merkle path.
  */
 verifyRouter.post("/tamper", async (req: Request, res: Response) => {
   const {
     batchId,
-    productId,
-    field = "serialNumber",
-    newValue = "SN-TAMPERED-9999",
+    serial,
+    field = "serial",
+    newValue = "SN-COUNTERFEIT-0001",
     onChain = false
   } = req.body ?? {};
 
   const batch = store.get(batchId);
   if (!batch) return res.status(404).json({ error: `batch ${batchId} not found` });
 
-  const original = findProduct(batch, productId);
+  const original = findProduct(batch, serial);
   if (!original) {
     return res
       .status(404)
-      .json({ error: `product ${productId} not in batch ${batchId}` });
+      .json({ error: `product ${serial} not in batch ${batchId}` });
   }
 
   const allowed: (keyof Product)[] = [
-    "productId",
-    "serialNumber",
-    "batchId",
-    "manufactureDate"
+    "serial",
+    "sku",
+    "batch_id",
+    "manufactured_at"
   ];
   if (!allowed.includes(field)) {
     return res.status(400).json({ error: `field must be one of ${allowed.join(", ")}` });

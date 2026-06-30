@@ -16,7 +16,7 @@ export function VerifyPage() {
 
   const [batchId, setBatchId] = useState(activeBatch || "BATCH-001");
   const [products, setProducts] = useState<HashedProduct[]>([]);
-  const [productId, setProductId] = useState("");
+  const [serial, setSerial] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const [verify, setVerify] = useState<VerifyResponse | null>(null);
@@ -24,7 +24,7 @@ export function VerifyPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   // Tamper controls.
-  const [field, setField] = useState("serialNumber");
+  const [field, setField] = useState("serial");
   const [newValue, setNewValue] = useState("SN-COUNTERFEIT-0001");
 
   const chainUp = chain?.connected === true;
@@ -35,7 +35,7 @@ export function VerifyPage() {
       .getBatch(batchId)
       .then((b) => {
         setProducts(b.products);
-        setProductId(b.products[0]?.productId ?? "");
+        setSerial(b.products[0]?.serial ?? "");
         setError(null);
       })
       .catch((e) => {
@@ -50,8 +50,8 @@ export function VerifyPage() {
     setTamper(null);
     try {
       const res = onChain
-        ? await api.verifyOnChain(batchId, productId)
-        : await api.verifyOffChain(batchId, productId);
+        ? await api.verifyOnChain(batchId, serial)
+        : await api.verifyOffChain(batchId, serial);
       setVerify(res);
     } catch (e) {
       setError((e as Error).message);
@@ -65,7 +65,7 @@ export function VerifyPage() {
     setError(null);
     setVerify(null);
     try {
-      const res = await api.tamper(batchId, productId, field, newValue, chainUp);
+      const res = await api.tamper(batchId, serial, field, newValue, chainUp);
       setTamper(res);
     } catch (e) {
       setError((e as Error).message);
@@ -90,19 +90,19 @@ export function VerifyPage() {
           <div>
             <label>Product</label>
             <select
-              value={productId}
-              onChange={(e) => setProductId(e.target.value)}
+              value={serial}
+              onChange={(e) => setSerial(e.target.value)}
             >
               {products.map((p) => (
-                <option key={p.productId} value={p.productId}>
-                  {p.productId} — {p.serialNumber}
+                <option key={p.serial} value={p.serial}>
+                  {p.serial} — {p.sku}
                 </option>
               ))}
             </select>
           </div>
           <button
             onClick={() => onVerify(true)}
-            disabled={busy !== null || !chainUp || !productId}
+            disabled={busy !== null || !chainUp || !serial}
             title={chainUp ? "" : "Blockchain not connected"}
           >
             {busy === "chain" ? "Verifying on-chain…" : "Verify on Smart Contract"}
@@ -110,7 +110,7 @@ export function VerifyPage() {
           <button
             className="secondary"
             onClick={() => onVerify(false)}
-            disabled={busy !== null || !productId}
+            disabled={busy !== null || !serial}
           >
             {busy === "off" ? "Verifying…" : "Verify Off-chain"}
           </button>
@@ -165,16 +165,16 @@ export function VerifyPage() {
           <div>
             <label>Field to tamper</label>
             <select value={field} onChange={(e) => setField(e.target.value)}>
-              <option value="serialNumber">serialNumber</option>
-              <option value="productId">productId</option>
-              <option value="manufactureDate">manufactureDate</option>
+              <option value="serial">serial</option>
+              <option value="sku">sku</option>
+              <option value="manufactured_at">manufactured_at</option>
             </select>
           </div>
           <div>
             <label>New value</label>
             <input value={newValue} onChange={(e) => setNewValue(e.target.value)} />
           </div>
-          <button className="danger" onClick={onTamper} disabled={busy !== null || !productId}>
+          <button className="danger" onClick={onTamper} disabled={busy !== null || !serial}>
             {busy === "tamper" ? "Tampering…" : "Tamper Product"}
           </button>
         </div>

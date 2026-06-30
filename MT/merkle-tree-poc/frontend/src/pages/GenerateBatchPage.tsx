@@ -103,18 +103,18 @@ export function GenerateBatchPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Product ID</th>
                     <th>Serial</th>
-                    <th>Mfg Date</th>
+                    <th>SKU</th>
+                    <th>Manufactured</th>
                     <th>Leaf (keccak256)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {batch.products.map((p) => (
-                    <tr key={p.productId}>
-                      <td>{p.productId}</td>
-                      <td>{p.serialNumber}</td>
-                      <td>{p.manufactureDate}</td>
+                    <tr key={p.serial}>
+                      <td>{p.serial}</td>
+                      <td>{p.sku}</td>
+                      <td>{p.manufactured_at}</td>
                       <td className="hash" title={p.leaf}>
                         {shortHash(p.leaf)}
                       </td>

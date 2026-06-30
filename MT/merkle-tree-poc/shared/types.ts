@@ -6,26 +6,32 @@
  * -----------------------------------------------------------------------------
  */
 
-/** A single physical product manufactured as part of a batch. */
+/**
+ * A single physical product manufactured as part of a batch.
+ *
+ * Field names match the VoltusWave / SKF data model (see merkle.md §8):
+ *   serial · sku · batch_id · manufactured_at
+ * The Merkle leaf is derived from EXACTLY these four fields, in this order.
+ */
 export interface Product {
-  /** Stable product identifier, e.g. "SKU-0001". */
-  productId: string;
-  /** Unique per-unit serial number, e.g. "SN-BATCH-001-0001". */
-  serialNumber: string;
+  /** Unique per-unit serial number, e.g. "SN-BATCH-001-0001". The unit's identity. */
+  serial: string;
+  /** SKU / product model, e.g. "SKF-6205-2RS" (typically shared across a batch). */
+  sku: string;
   /** The batch this product belongs to, e.g. "BATCH-001". */
-  batchId: string;
-  /** Manufacture date as a Unix timestamp in SECONDS (uint256 on-chain). */
-  manufactureDate: number;
+  batch_id: string;
+  /** Manufacture date as an ISO-8601 timestamp string, e.g. "2023-11-14T22:14:20.000Z". */
+  manufactured_at: string;
 }
 
 /**
  * A product enriched with the cryptographic data derived from it. This is what
- * the API returns so the UI can show: Product -> Encoded Data -> Hash.
+ * the API returns so the UI can show: Product -> Canonical JSON -> Hash.
  */
 export interface HashedProduct extends Product {
-  /** The Solidity ABI-packed encoding shown for educational purposes. */
+  /** The canonical JSON serialization that gets hashed (shown for teaching). */
   encoded: string;
-  /** keccak256(abi.encodePacked(...)) of the product fields = the Merkle leaf. */
+  /** keccak256(canonical JSON of the product fields) = the Merkle leaf. */
   leaf: string;
 }
 

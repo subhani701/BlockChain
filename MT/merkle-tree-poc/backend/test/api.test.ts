@@ -30,7 +30,7 @@ describe("POST /batch/create", () => {
     expect(res.body.totalProducts).toBe(16);
     expect(res.body.products).toHaveLength(16);
     expect(res.body.products[0].leaf).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(res.body.products[0].encoded).toContain("string:SKU-0001");
+    expect(res.body.products[0].encoded).toContain('"serial":"SN-BATCH-TEST-0001"');
   });
 
   it("rejects duplicate batch ids", async () => {
@@ -56,10 +56,10 @@ describe("GET /batch/:batchId/tree", () => {
   });
 });
 
-describe("GET /proof/:productId", () => {
+describe("GET /proof/:serial", () => {
   it("returns a leaf, proof and steps for a product", async () => {
     const res = await request(app)
-      .get("/proof/SKU-0003")
+      .get("/proof/SN-BATCH-TEST-0003")
       .query({ batchId: BATCH });
 
     expect(res.status).toBe(200);
@@ -73,7 +73,7 @@ describe("POST /verify/offchain", () => {
   it("verifies a genuine product as VALID", async () => {
     const res = await request(app)
       .post("/verify/offchain")
-      .send({ batchId: BATCH, productId: "SKU-0007" });
+      .send({ batchId: BATCH, serial: "SN-BATCH-TEST-0007" });
 
     expect(res.status).toBe(200);
     expect(res.body.valid).toBe(true);
@@ -85,7 +85,7 @@ describe("POST /verify/tamper", () => {
   it("flags a tampered product as INVALID", async () => {
     const res = await request(app)
       .post("/verify/tamper")
-      .send({ batchId: BATCH, productId: "SKU-0005", field: "serialNumber" });
+      .send({ batchId: BATCH, serial: "SN-BATCH-TEST-0005", field: "serial" });
 
     expect(res.status).toBe(200);
     expect(res.body.offchainResult).toBe("INVALID");
