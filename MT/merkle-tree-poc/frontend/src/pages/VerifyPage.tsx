@@ -10,7 +10,9 @@ import {
   CircleX,
   Fuel,
   Blocks,
-  ArrowRight
+  ArrowRight,
+  Package,
+  Clock
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -23,7 +25,14 @@ import type { AppCtx } from "@/App";
 import { PageHeader } from "@/components/page-header";
 import { HashDisplay } from "@/components/hash-display";
 import { DetailRow } from "@/components/detail-row";
+import { CopyButton } from "@/components/copy-button";
 import { Spinner } from "@/components/spinner";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger
+} from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -89,6 +98,10 @@ export function VerifyPage() {
   const [serial, setSerial] = useState("");
 
   const [verify, setVerify] = useState<VerifyResponse | null>(null);
+  const [verifiedProduct, setVerifiedProduct] = useState<HashedProduct | null>(
+    null
+  );
+  const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
   const [tamper, setTamper] = useState<TamperResponse | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -119,6 +132,8 @@ export function VerifyPage() {
         ? await api.verifyOnChain(batchId, serial)
         : await api.verifyOffChain(batchId, serial);
       setVerify(res);
+      setVerifiedProduct(products.find((p) => p.serial === serial) ?? null);
+      setVerifiedAt(new Date().toLocaleString());
       toast[res.valid ? "success" : "error"](
         `${res.result}${onChain ? " (on-chain)" : " (off-chain)"}`
       );
@@ -247,6 +262,30 @@ export function VerifyPage() {
                 verify.onChain ? "verified on-chain" : "verified off-chain"
               }
             />
+
+            {/* Product details */}
+            {verifiedProduct && (
+              <div className="rounded-lg border p-3">
+                <div className="mb-1 flex items-center gap-2 text-sm font-medium">
+                  <Package className="h-4 w-4 text-muted-foreground" />
+                  Product details
+                </div>
+                <div className="divide-y">
+                  <DetailRow label="Serial">
+                    {verifiedProduct.serial}
+                  </DetailRow>
+                  <DetailRow label="SKU">{verifiedProduct.sku}</DetailRow>
+                  <DetailRow label="Batch">
+                    {verifiedProduct.batch_id}
+                  </DetailRow>
+                  <DetailRow label="Manufactured">
+                    {verifiedProduct.manufactured_at}
+                  </DetailRow>
+                </div>
+              </div>
+            )}
+
+            {/* Verification details */}
             <div className="divide-y">
               <DetailRow label="Leaf">
                 <HashDisplay value={verify.leaf} />
@@ -278,7 +317,51 @@ export function VerifyPage() {
                   </DetailRow>
                 </>
               )}
+              {verifiedAt && (
+                <DetailRow label="Verified at">
+                  <span className="inline-flex items-center gap-1 text-muted-foreground">
+                    <Clock className="h-3.5 w-3.5" />
+                    {verifiedAt}
+                  </span>
+                </DetailRow>
+              )}
             </div>
+
+            {/* Full Merkle proof (sibling hashes) */}
+            {verify.proof.length > 0 && (
+              <Accordion type="single" collapsible>
+                <AccordionItem value="proof" className="border-b-0">
+                  <AccordionTrigger className="py-2">
+                    View Merkle proof ({verify.proof.length} sibling
+                    {verify.proof.length === 1 ? "" : "s"})
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs">
+                        Sibling hashes (leaf → root)
+                      </span>
+                      <CopyButton
+                        value={JSON.stringify(verify.proof)}
+                        label="Proof copied"
+                      />
+                    </div>
+                    <ol className="space-y-1">
+                      {verify.proof.map((h, i) => (
+                        <li
+                          key={i}
+                          className="flex items-center gap-2 text-xs"
+                        >
+                          <span className="w-5 shrink-0 text-right text-muted-foreground">
+                            {i + 1}
+                          </span>
+                          <HashDisplay value={h} lead={12} tail={10} />
+                        </li>
+                      ))}
+                    </ol>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            )}
           </CardContent>
         </Card>
       )}
