@@ -3,6 +3,7 @@ import {
   Boxes,
   GitBranch,
   ShieldCheck,
+  ScanLine,
   BookOpen,
   type LucideIcon
 } from "lucide-react";
@@ -39,6 +40,12 @@ export const NAV: NavItem[] = [
     label: "Verify & Tamper",
     description: "Verify a product on-chain and run the tampering demo",
     icon: ShieldCheck
+  },
+  {
+    path: "/field-verify",
+    label: "Field Verify",
+    description: "Scan a product QR and verify it offline against the on-chain root",
+    icon: ScanLine
   },
   {
     path: "/learn",

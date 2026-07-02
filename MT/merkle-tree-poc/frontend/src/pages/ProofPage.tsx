@@ -2,9 +2,19 @@
  * Proof — select a product, generate its Merkle proof, and visualize the path.
  */
 import { useEffect, useMemo, useState } from "react";
-import { useOutletContext } from "react-router-dom";
-import { GitBranch, Fingerprint, Search } from "lucide-react";
+import { Link, useOutletContext } from "react-router-dom";
+import {
+  GitBranch,
+  Fingerprint,
+  Search,
+  QrCode as QrCodeIcon,
+  Download,
+  Copy
+} from "lucide-react";
+import QRCode from "qrcode";
 import { toast } from "sonner";
+import { QrCode } from "@/components/qr-code";
+import { makeBundle } from "@/lib/bundle";
 import {
   api,
   type HashedProduct,
@@ -85,6 +95,25 @@ export function ProofPage() {
     () => (proof ? new Set(proof.proof) : undefined),
     [proof]
   );
+
+  const bundleStr = useMemo(
+    () => (proof ? JSON.stringify(makeBundle(proof)) : ""),
+    [proof]
+  );
+
+  async function downloadQr() {
+    if (!bundleStr) return;
+    const url = await QRCode.toDataURL(bundleStr, {
+      margin: 1,
+      width: 512,
+      errorCorrectionLevel: "M"
+    });
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${proof?.product.serial ?? "product"}-qr.png`;
+    a.click();
+    toast.success("QR downloaded");
+  }
 
   return (
     <div className="space-y-6">
@@ -185,6 +214,54 @@ export function ProofPage() {
             </CardHeader>
             <CardContent>
               <ProofPathView proof={proof} />
+            </CardContent>
+          </Card>
+
+          {/* QR — self-contained verification bundle */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <QrCodeIcon className="h-4 w-4 text-muted-foreground" />
+                Product QR (scan to verify)
+              </CardTitle>
+              <CardDescription>
+                Encodes a self-contained bundle (product + leaf + proof + root +
+                contract + leaf spec) — verifiable offline against the on-chain
+                root, so it survives even if this backend is gone.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+              <QrCode value={bundleStr} />
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground">
+                  Bundle size: {bundleStr.length} bytes · leaf spec{" "}
+                  {proof.leafSpec ?? "?"}.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" onClick={downloadQr}>
+                    <Download />
+                    Download QR
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(bundleStr);
+                      toast.success("Bundle copied");
+                    }}
+                  >
+                    <Copy />
+                    Copy bundle
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Test it on the{" "}
+                  <Link to="/field-verify" className="text-primary underline">
+                    Field Verify
+                  </Link>{" "}
+                  page — paste the bundle to simulate a scan.
+                </p>
+              </div>
             </CardContent>
           </Card>
 

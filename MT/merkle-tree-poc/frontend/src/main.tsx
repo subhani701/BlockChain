@@ -9,6 +9,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { GenerateBatchPage } from "./pages/GenerateBatchPage";
 import { ProofPage } from "./pages/ProofPage";
 import { VerifyPage } from "./pages/VerifyPage";
+import { FieldVerifyPage } from "./pages/FieldVerifyPage";
 import { LearnPage } from "./pages/LearnPage";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -24,6 +25,7 @@ const router = createBrowserRouter([
       { path: "generate", element: <GenerateBatchPage /> },
       { path: "proof", element: <ProofPage /> },
       { path: "verify", element: <VerifyPage /> },
+      { path: "field-verify", element: <FieldVerifyPage /> },
       { path: "learn", element: <LearnPage /> }
     ]
   }

@@ -98,6 +98,9 @@ export interface ProofResponse {
   merkleRoot: string;
   proof: string[];
   steps: ProofStep[];
+  /** Self-contained bundle extras (for QR / offline verification). */
+  leafSpec?: string;
+  contract?: string | null;
 }
 
 export interface VerifyResponse {
