@@ -1,0 +1,35 @@
+# The Graph schema for ProductRegistry events (Phase 6.2).
+# Entities are populated by src/mapping.ts from on-chain events.
+
+type Batch @entity {
+  "batchId (human-readable) — the entity id."
+  id: ID!
+  merkleRoot: Bytes!
+  totalProducts: BigInt!
+  version: BigInt!
+  createdAt: BigInt!
+  updatedAt: BigInt!
+  versions: [BatchVersion!]! @derivedFrom(field: "batch")
+  verifications: [Verification!]! @derivedFrom(field: "batch")
+}
+
+"One row per root (register = v1, each supersede = v+1) — full history."
+type BatchVersion @entity {
+  id: ID! # batchId-version
+  batch: Batch!
+  version: BigInt!
+  merkleRoot: Bytes!
+  totalProducts: BigInt!
+  txHash: Bytes!
+  timestamp: BigInt!
+}
+
+"One row per on-chain verifyProduct call (auditable trail)."
+type Verification @entity(immutable: true) {
+  id: ID! # txHash-logIndex
+  batch: Batch!
+  leaf: Bytes!
+  valid: Boolean!
+  txHash: Bytes!
+  timestamp: BigInt!
+}
