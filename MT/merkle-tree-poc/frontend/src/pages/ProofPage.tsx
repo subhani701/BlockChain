@@ -1,18 +1,41 @@
 /**
- * Page 2 — Select a Product, Generate its Merkle Proof, Visualize the Path.
+ * Proof — select a product, generate its Merkle proof, and visualize the path.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
+import { GitBranch, Fingerprint, Search } from "lucide-react";
+import { toast } from "sonner";
 import {
   api,
   type HashedProduct,
   type ProofResponse,
   type TreeResponse
-} from "../api/client";
-import { ProofPathView } from "../components/ProofPathView";
-import { MerkleTreeView } from "../components/MerkleTreeView";
-import { HashFlow } from "../components/HashFlow";
-import type { AppCtx } from "../App";
+} from "@/api/client";
+import { ProofPathView } from "@/components/ProofPathView";
+import { MerkleTreeView } from "@/components/MerkleTreeView";
+import { HashFlow } from "@/components/HashFlow";
+import { PageHeader } from "@/components/page-header";
+import { Spinner } from "@/components/spinner";
+import type { AppCtx } from "@/App";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export function ProofPage() {
   const { activeBatch, setActiveBatch } = useOutletContext<AppCtx>();
@@ -22,13 +45,13 @@ export function ProofPage() {
   const [serial, setSerial] = useState("");
   const [proof, setProof] = useState<ProofResponse | null>(null);
   const [tree, setTree] = useState<TreeResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Load products + tree when the batch changes.
   useEffect(() => {
     if (!batchId) return;
-    setError(null);
+    setLoadError(null);
     setProof(null);
     Promise.all([api.getBatch(batchId), api.getTree(batchId)])
       .then(([b, t]) => {
@@ -39,91 +62,157 @@ export function ProofPage() {
       .catch((e) => {
         setProducts([]);
         setTree(null);
-        setError((e as Error).message);
+        setLoadError((e as Error).message);
       });
   }, [batchId]);
 
   async function onGenerateProof() {
     if (!serial) return;
     setBusy(true);
-    setError(null);
     try {
       const res = await api.getProof(serial, batchId);
       setProof(res);
       setActiveBatch(batchId);
+      toast.success(`Proof generated (${res.proof.length} siblings)`);
     } catch (e) {
-      setError((e as Error).message);
+      toast.error((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
 
-  // Highlight the proof siblings on the tree.
-  const siblingSet = proof ? new Set(proof.proof) : undefined;
+  const siblingSet = useMemo(
+    () => (proof ? new Set(proof.proof) : undefined),
+    [proof]
+  );
 
   return (
-    <div>
-      <div className="card">
-        <h2>Step 4 · Generate a Merkle Proof</h2>
-        <p className="muted">
-          A proof is the short list of sibling hashes needed to rebuild the root
-          from one product — about log₂(n) hashes, not the whole tree.
-        </p>
-        <div className="row">
-          <div>
-            <label>Batch ID</label>
-            <input value={batchId} onChange={(e) => setBatchId(e.target.value)} />
+    <div className="space-y-6">
+      <PageHeader
+        title="Proof"
+        description="Generate a Merkle proof for one product and visualize its path to the root"
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <GitBranch className="h-4 w-4 text-muted-foreground" />
+            Generate a Merkle proof
+          </CardTitle>
+          <CardDescription>
+            A proof is the short list of sibling hashes (≈ log₂ n) needed to
+            rebuild the root from one product — not the whole tree.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="batchId">Batch ID</Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="batchId"
+                  className="pl-8"
+                  value={batchId}
+                  onChange={(e) => setBatchId(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex-1 space-y-2">
+              <Label>Product</Label>
+              <Select
+                value={serial}
+                onValueChange={setSerial}
+                disabled={products.length === 0}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a product…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map((p) => (
+                    <SelectItem key={p.serial} value={p.serial}>
+                      {p.serial} — {p.sku}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={onGenerateProof} disabled={busy || !serial}>
+              {busy ? <Spinner /> : <GitBranch />}
+              {busy ? "Generating…" : "Generate Proof"}
+            </Button>
           </div>
-          <div>
-            <label>Product</label>
-            <select
-              value={serial}
-              onChange={(e) => setSerial(e.target.value)}
-            >
-              {products.map((p) => (
-                <option key={p.serial} value={p.serial}>
-                  {p.serial} — {p.sku}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button onClick={onGenerateProof} disabled={busy || !serial}>
-            {busy ? "Generating…" : "Generate Proof"}
-          </button>
-        </div>
-        {error && <div className="error" style={{ marginTop: "0.8rem" }}>{error}</div>}
-      </div>
+
+          {loadError && (
+            <Alert variant="warning" className="mt-4">
+              <AlertTitle>Batch not available</AlertTitle>
+              <AlertDescription>
+                {loadError} — generate the batch first on the Batch &amp; Tree
+                page.
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
 
       {proof && (
         <>
-          <div className="card">
-            <h2>Leaf for {proof.product.serial}</h2>
-            <HashFlow
-              product={proof.product}
-              encoded={proof.encoded}
-              leaf={proof.leaf}
-            />
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Fingerprint className="h-4 w-4 text-muted-foreground" />
+                Leaf for {proof.product.serial}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <HashFlow
+                product={proof.product}
+                encoded={proof.encoded}
+                leaf={proof.leaf}
+              />
+            </CardContent>
+          </Card>
 
-          <div className="card">
-            <h2>Proof path ({proof.proof.length} siblings)</h2>
-            <ProofPathView proof={proof} />
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                Proof path
+                <Badge variant="secondary">
+                  {proof.proof.length} sibling
+                  {proof.proof.length === 1 ? "" : "s"}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ProofPathView proof={proof} />
+            </CardContent>
+          </Card>
 
           {tree && (
-            <div className="card">
-              <h2>Where the proof lives in the tree</h2>
-              <p className="muted">
-                <span style={{ color: "var(--good)" }}>Green</span> = your leaf,
-                <span style={{ color: "var(--warn)" }}> amber</span> = sibling
-                hashes supplied by the proof.
-              </p>
-              <MerkleTreeView
-                levels={tree.levels}
-                leaf={proof.leaf}
-                siblingNodes={siblingSet}
-              />
-            </div>
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Where the proof lives in the tree
+                </CardTitle>
+                <CardDescription className="flex flex-wrap items-center gap-4 pt-1">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-success" />
+                    your leaf
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-warning" />
+                    proof siblings
+                  </span>
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <MerkleTreeView
+                  levels={tree.levels}
+                  leaf={proof.leaf}
+                  siblingNodes={siblingSet}
+                />
+              </CardContent>
+            </Card>
           )}
         </>
       )}
