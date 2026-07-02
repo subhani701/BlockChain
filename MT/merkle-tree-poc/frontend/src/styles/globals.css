@@ -1,8 +1,3 @@
-/* Reserve `legacy` as the lowest-priority layer (app.css fills it). Declared
-   before Tailwind's layers so base/components/utilities + the new shadcn UI
-   always override the old PoC styles. */
-@layer legacy;
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

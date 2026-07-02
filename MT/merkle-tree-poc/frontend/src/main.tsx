@@ -14,7 +14,6 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import "./styles/globals.css";
-import "./styles/app.css";
 
 const router = createBrowserRouter([
   {
