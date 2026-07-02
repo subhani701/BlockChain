@@ -26,6 +26,34 @@ import { MerkleTree } from "merkletreejs";
 import keccak256 from "keccak256";
 import type { MerkleLevel, ProofStep } from "./types";
 
+/**
+ * ODD-LEAF CONVENTION (audit item #6) — locked to "promote".
+ * -------------------------------------------------------------------------
+ * When a tree level has an odd number of nodes, the lonely last node can be:
+ *   - "promote"   : carried up UNCHANGED to the next level  ← WE USE THIS
+ *   - "duplicate" : hashed with itself (hash(h, h))
+ * These produce DIFFERENT roots, so every producer/verifier MUST agree.
+ * merkletreejs promotes by default (duplicateOdd = false); we set it
+ * EXPLICITLY below so the convention can never drift silently, and OZ's
+ * on-chain MerkleProof.verify is compatible with the promote convention
+ * (proven by the odd-sized contract test). NOTE: merkle.md's illustrative
+ * sample uses "duplicate" — do NOT copy that into production code.
+ */
+export const ODD_LEAF_CONVENTION = "promote" as const;
+
+/**
+ * Thrown when a Merkle operation is attempted on zero leaves. An empty batch has
+ * no meaningful root (and the on-chain contract rejects a zero root / zero
+ * product count), so we fail loudly here rather than emit a bogus "0x" root.
+ */
+export class EmptyBatchError extends Error {
+  constructor() {
+    super("EmptyBatchError: cannot build a Merkle tree from zero leaves");
+    this.name = "EmptyBatchError";
+    Object.setPrototypeOf(this, EmptyBatchError.prototype);
+  }
+}
+
 /** Convert a 0x-hex string to a Buffer that merkletreejs understands. */
 function toBuffer(hex: string): Buffer {
   return Buffer.from(hex.replace(/^0x/, ""), "hex");
@@ -41,11 +69,17 @@ function toHex(buf: Buffer): string {
  * @returns the merkletreejs MerkleTree instance.
  */
 export function buildTree(leaves: string[]): MerkleTree {
+  if (!Array.isArray(leaves) || leaves.length === 0) {
+    throw new EmptyBatchError();
+  }
   const leafBuffers = leaves.map(toBuffer);
   return new MerkleTree(leafBuffers, keccak256, {
-    sortPairs: true, // Match OpenZeppelin MerkleProof.
+    sortPairs: true, // Match OpenZeppelin MerkleProof (commutative hashing).
     // Leaves are already hashed; do not hash again.
-    hashLeaves: false
+    hashLeaves: false,
+    // Lock the odd-leaf convention to "promote" (see ODD_LEAF_CONVENTION).
+    // This is merkletreejs's default, set explicitly to prevent silent drift.
+    duplicateOdd: false
   });
 }
 

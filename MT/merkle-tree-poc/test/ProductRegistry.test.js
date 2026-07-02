@@ -178,6 +178,65 @@ contract("ProductRegistry", (accounts) => {
     assert.equal(valid, false, "forged product must be INVALID");
   });
 
+  it("verifies genuine + rejects tampered for an ODD-sized batch (promote convention)", async () => {
+    // 5 leaves forces a promoted lonely node at level 0 (index 4). This proves
+    // OpenZeppelin's MerkleProof.verify is compatible with our promote convention.
+    const ODD_ID = "BATCH-ODD-5";
+    const oddProducts = makeBatch(ODD_ID, 5);
+    const oddLeaves = oddProducts.map(hashProduct);
+    const oddTree = buildTree(oddLeaves);
+    const oddRoot = oddTree.getHexRoot();
+
+    await registry.registerBatch(ODD_ID, oddRoot, 5, { from: manufacturer });
+
+    // The promoted lonely product (last index) must still verify on-chain.
+    const target = oddProducts[4];
+    const leaf = hashProduct(target);
+    const proof = oddTree.getHexProof(leaf);
+    assert.equal(
+      await registry.verifyProductView.call(ODD_ID, proof, leaf),
+      true,
+      "promoted odd node should verify VALID on-chain"
+    );
+
+    // Tampering it must fail.
+    const tamperedLeaf = hashProduct({ ...target, serial: "SN-FAKE-9999" });
+    assert.equal(
+      await registry.verifyProductView.call(ODD_ID, proof, tamperedLeaf),
+      false,
+      "tampered odd node must be INVALID"
+    );
+  });
+
+  it("verifies a SINGLE-leaf batch on-chain (root == leaf, empty proof)", async () => {
+    // A batch of one: the root IS the leaf and the proof is empty. OZ's
+    // MerkleProof.verify([], root, leaf) returns leaf == root.
+    const ONE_ID = "BATCH-ONE";
+    const one = makeBatch(ONE_ID, 1);
+    const leaf = hashProduct(one[0]);
+    const tree = buildTree([leaf]);
+    const root = tree.getHexRoot();
+
+    assert.equal(root, leaf, "single-leaf root must equal the leaf");
+
+    await registry.registerBatch(ONE_ID, root, 1, { from: manufacturer });
+
+    // Genuine: empty proof verifies VALID.
+    assert.equal(
+      await registry.verifyProductView.call(ONE_ID, [], leaf),
+      true,
+      "single product should verify VALID with an empty proof"
+    );
+
+    // Tampered: a different leaf must be INVALID.
+    const tamperedLeaf = hashProduct({ ...one[0], serial: "SN-FAKE-0001" });
+    assert.equal(
+      await registry.verifyProductView.call(ONE_ID, [], tamperedLeaf),
+      false,
+      "tampered single product must be INVALID"
+    );
+  });
+
   it("reverts when verifying against an unknown batch", async () => {
     const leaf = hashProduct(products[0]);
     const proof = tree.getHexProof(leaf);

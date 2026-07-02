@@ -44,6 +44,42 @@ describe("POST /batch/create", () => {
     const res = await request(app).post("/batch/create").send({ count: 10 });
     expect(res.status).toBe(400);
   });
+
+  it("accepts a valid custom products[] list", async () => {
+    const products = [
+      { serial: "SN-C-1", sku: "SKF-1", batch_id: "BATCH-CUSTOM", manufactured_at: "2023-11-14T22:14:20.000Z" },
+      { serial: "SN-C-2", sku: "SKF-1", batch_id: "BATCH-CUSTOM", manufactured_at: "2023-11-14T22:15:20.000Z" }
+    ];
+    const res = await request(app)
+      .post("/batch/create")
+      .send({ batchId: "BATCH-CUSTOM", products });
+    expect(res.status).toBe(201);
+    expect(res.body.totalProducts).toBe(2);
+    expect(res.body.products[0].leaf).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  it("rejects a custom products[] list with duplicate serials (400)", async () => {
+    const products = [
+      { serial: "SN-DUP", sku: "SKF-1", batch_id: "BATCH-DUP", manufactured_at: "2023-11-14T22:14:20.000Z" },
+      { serial: "SN-DUP", sku: "SKF-1", batch_id: "BATCH-DUP", manufactured_at: "2023-11-14T22:15:20.000Z" }
+    ];
+    const res = await request(app)
+      .post("/batch/create")
+      .send({ batchId: "BATCH-DUP", products });
+    expect(res.status).toBe(400);
+    expect(res.body.duplicates).toContain("SN-DUP");
+  });
+
+  it("rejects a custom products[] list with an invalid product (400)", async () => {
+    const products = [
+      { serial: "SN-BAD-1", sku: "SKF-1", batch_id: "BATCH-BAD", manufactured_at: "not-a-date" }
+    ];
+    const res = await request(app)
+      .post("/batch/create")
+      .send({ batchId: "BATCH-BAD", products });
+    expect(res.status).toBe(400);
+    expect(res.body.field).toBe("manufactured_at");
+  });
 });
 
 describe("GET /batch/:batchId/tree", () => {
@@ -90,5 +126,27 @@ describe("POST /verify/tamper", () => {
     expect(res.status).toBe(200);
     expect(res.body.offchainResult).toBe("INVALID");
     expect(res.body.original.leaf).not.toBe(res.body.tampered.leaf);
+  });
+
+  it("flags a tampered sku as INVALID", async () => {
+    const res = await request(app)
+      .post("/verify/tamper")
+      .send({ batchId: BATCH, serial: "SN-BATCH-TEST-0006", field: "sku", newValue: "FAKE-SKU" });
+    expect(res.status).toBe(200);
+    expect(res.body.offchainResult).toBe("INVALID");
+  });
+
+  it("rejects tampering manufactured_at with a non-date (structurally invalid)", async () => {
+    const res = await request(app)
+      .post("/verify/tamper")
+      .send({
+        batchId: BATCH,
+        serial: "SN-BATCH-TEST-0007",
+        field: "manufactured_at",
+        newValue: "not-a-date"
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.offchainResult).toBe("INVALID");
+    expect(res.body.tampered.rejected).toBeTruthy();
   });
 });

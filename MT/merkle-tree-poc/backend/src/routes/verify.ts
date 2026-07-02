@@ -20,6 +20,7 @@ import {
 } from "../services/merkleService";
 import { chainStatus, verifyProductOnChain } from "../services/blockchain";
 import type { Product } from "../../../shared/types";
+import { ProductValidationError } from "../../../shared/validate";
 
 export const verifyRouter = Router();
 
@@ -169,7 +170,39 @@ verifyRouter.post("/tamper", async (req: Request, res: Response) => {
 
   // Build the tampered product + its new leaf.
   const tampered: Product = { ...original, [field]: newValue } as Product;
-  const tamperedLeaf = leafFor(tampered);
+
+  // Tampering can produce STRUCTURALLY INVALID data (e.g. a non-date
+  // manufactured_at). Production-correct behavior is to reject it before
+  // hashing — such a product cannot belong to any batch — rather than 500.
+  let tamperedLeaf: { leaf: string; encoded: string };
+  try {
+    tamperedLeaf = leafFor(tampered);
+  } catch (err) {
+    if (err instanceof ProductValidationError) {
+      return res.json({
+        batchId,
+        field,
+        original: {
+          product: original,
+          encoded: genuine.encoded,
+          leaf: genuine.leaf
+        },
+        tampered: {
+          product: tampered,
+          encoded: null,
+          leaf: null,
+          rejected: err.message
+        },
+        proofUsed: genuine.proof,
+        merkleRoot: genuine.merkleRoot,
+        offchainResult: "INVALID",
+        explanation:
+          `The tampered product is structurally invalid (${err.message}), so it is ` +
+          `rejected at validation before hashing — it cannot belong to any batch.`
+      });
+    }
+    throw err;
+  }
 
   // Verify the TAMPERED leaf using the ORIGINAL proof.
   const offchain = verifyAgainstBatch(

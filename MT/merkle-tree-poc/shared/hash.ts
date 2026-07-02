@@ -22,6 +22,7 @@
  */
 import { keccak256, toUtf8Bytes } from "ethers";
 import type { Product } from "./types";
+import { normalizeProduct } from "./validate";
 
 /**
  * The canonical string that gets hashed into a leaf. FIXED key order:
@@ -30,11 +31,16 @@ import type { Product } from "./types";
  * without changing it identically everywhere (backend, tests, on-chain prover).
  */
 export function canonicalLeaf(product: Product): string {
+  // Validate + normalize FIRST so the hashed bytes are always canonical
+  // (fixed key order here, canonical field values from normalizeProduct).
+  // Throws ProductValidationError on invalid input — a leaf must never be
+  // computed from malformed data.
+  const p = normalizeProduct(product);
   return JSON.stringify({
-    serial: product.serial,
-    sku: product.sku,
-    batch_id: product.batch_id,
-    manufactured_at: product.manufactured_at
+    serial: p.serial,
+    sku: p.sku,
+    batch_id: p.batch_id,
+    manufactured_at: p.manufactured_at
   });
 }
 

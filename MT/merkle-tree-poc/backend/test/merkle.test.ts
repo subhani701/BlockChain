@@ -12,7 +12,10 @@ import {
   getRoot,
   getProof,
   verifyProof,
-  getLevels
+  getLevels,
+  buildTree,
+  ODD_LEAF_CONVENTION,
+  EmptyBatchError
 } from "../../shared/merkle";
 import type { Product } from "../../shared/types";
 
@@ -74,6 +77,68 @@ describe("merkle proof", () => {
     expect(proof.length).toBeGreaterThanOrEqual(6);
     expect(proof.length).toBeLessThanOrEqual(8);
   });
+});
+
+describe("empty batch handling", () => {
+  it("throws EmptyBatchError from buildTree([])", () => {
+    expect(() => buildTree([])).toThrow(EmptyBatchError);
+  });
+
+  it("throws EmptyBatchError from getRoot([])", () => {
+    expect(() => getRoot([])).toThrow(EmptyBatchError);
+  });
+
+  it("throws EmptyBatchError from getLevels([])", () => {
+    expect(() => getLevels([])).toThrow(EmptyBatchError);
+  });
+});
+
+describe("single-leaf tree", () => {
+  const only = batch.products[0];
+  const leaf = hashProduct(only);
+
+  it("root equals the single leaf", () => {
+    expect(getRoot([leaf])).toBe(leaf);
+  });
+
+  it("proof for the only leaf is empty", () => {
+    expect(getProof([leaf], leaf)).toEqual([]);
+  });
+
+  it("verifies the only product with an empty proof", () => {
+    const root = getRoot([leaf]);
+    expect(verifyProof(leaf, [], root)).toBe(true);
+  });
+
+  it("rejects a different leaf against a single-leaf root", () => {
+    const root = getRoot([leaf]);
+    const other = hashProduct({ ...only, serial: only.serial + "-X" });
+    expect(verifyProof(other, [], root)).toBe(false);
+  });
+});
+
+describe("odd-leaf handling (promote convention)", () => {
+  it("declares the promote convention", () => {
+    expect(ODD_LEAF_CONVENTION).toBe("promote");
+  });
+
+  // Odd counts force a lonely node at one or more levels. Every product —
+  // including the promoted last one — must still verify against the root.
+  for (const n of [3, 5, 7, 9]) {
+    it(`verifies every product in an odd-sized batch of ${n}`, () => {
+      const b = generateBatch("BATCH-ODD", n);
+      const lvs = b.products.map(hashProduct);
+      const r = getRoot(lvs);
+      for (const p of b.products) {
+        const leaf = hashProduct(p);
+        expect(verifyProof(leaf, getProof(lvs, leaf), r)).toBe(true);
+      }
+      // The last product (index n-1) is the one promoted at level 0.
+      const last = b.products[n - 1];
+      const lastLeaf = hashProduct(last);
+      expect(verifyProof(lastLeaf, getProof(lvs, lastLeaf), r)).toBe(true);
+    });
+  }
 });
 
 describe("tampering", () => {

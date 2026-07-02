@@ -18,6 +18,13 @@ import {
   treeLevels
 } from "../services/merkleService";
 import { registerBatchOnChain } from "../services/blockchain";
+import type { Batch } from "../../../shared/types";
+import {
+  normalizeProducts,
+  assertUniqueSerials,
+  ProductValidationError,
+  DuplicateProductError
+} from "../../../shared/validate";
 
 export const batchRouter = Router();
 
@@ -27,7 +34,7 @@ export const batchRouter = Router();
  * Generates products and stores the batch (NOT yet on-chain).
  */
 batchRouter.post("/create", (req: Request, res: Response) => {
-  const { batchId, count } = req.body ?? {};
+  const { batchId, count, products } = req.body ?? {};
   if (!batchId || typeof batchId !== "string") {
     return res.status(400).json({ error: "batchId (string) is required" });
   }
@@ -36,12 +43,46 @@ batchRouter.post("/create", (req: Request, res: Response) => {
       .status(409)
       .json({ error: `batch ${batchId} already exists` });
   }
-  const n = Number.isInteger(count) && count > 0 ? count : 100;
-  if (n > 5000) {
-    return res.status(400).json({ error: "count must be <= 5000" });
+
+  let batch: Batch;
+  try {
+    if (products !== undefined) {
+      // Custom product list (the production/ingest path): validate + normalize
+      // every product and reject duplicate serials before building a tree.
+      const normalized = normalizeProducts(products);
+      if (normalized.length === 0) {
+        return res.status(400).json({ error: "products must not be empty" });
+      }
+      if (normalized.length > 5000) {
+        return res.status(400).json({ error: "products length must be <= 5000" });
+      }
+      batch = {
+        batchId,
+        products: normalized,
+        generatedAt: new Date().toISOString()
+      };
+    } else {
+      // Generated path: deterministic products with guaranteed-unique serials.
+      const n = Number.isInteger(count) && count > 0 ? count : 100;
+      if (n > 5000) {
+        return res.status(400).json({ error: "count must be <= 5000" });
+      }
+      batch = generateBatch(batchId, n);
+      // Enforce the uniqueness invariant universally (defensive; always holds here).
+      assertUniqueSerials(batch.products);
+    }
+  } catch (err) {
+    if (err instanceof DuplicateProductError) {
+      return res
+        .status(400)
+        .json({ error: err.message, duplicates: err.duplicates });
+    }
+    if (err instanceof ProductValidationError) {
+      return res.status(400).json({ error: err.message, field: err.field });
+    }
+    throw err;
   }
 
-  const batch = generateBatch(batchId, n);
   store.upsert(batch);
 
   return res.status(201).json({
