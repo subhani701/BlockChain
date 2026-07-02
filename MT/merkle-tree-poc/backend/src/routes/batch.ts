@@ -15,7 +15,8 @@ import { store } from "../services/store";
 import {
   computeRoot,
   hashedProducts,
-  treeLevels
+  treeLevels,
+  allProofs
 } from "../services/merkleService";
 import { registerBatchOnChain, supersedeBatchOnChain } from "../services/blockchain";
 import type { Batch } from "../../../shared/types";
@@ -217,6 +218,24 @@ batchRouter.get("/:batchId", (req: Request, res: Response) => {
     merkleRoot: batch.merkleRoot ?? computeRoot(batch),
     onChain: batch.onChain ?? null,
     products: hashedProducts(batch)
+  });
+});
+
+/**
+ * GET /batch/:batchId/proofs -> proofs for every product (served from cache).
+ * Bounded by the batch size cap (<= 5000 products).
+ */
+batchRouter.get("/:batchId/proofs", (req: Request, res: Response) => {
+  const batch = store.get(req.params.batchId);
+  if (!batch) {
+    return res.status(404).json({ error: "batch not found" });
+  }
+  const proofs = allProofs(batch);
+  return res.json({
+    batchId: batch.batchId,
+    merkleRoot: computeRoot(batch),
+    count: proofs.length,
+    proofs
   });
 });
 

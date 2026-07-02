@@ -10,6 +10,12 @@ import { describe, it, expect } from "vitest";
 import { SqliteStore, JsonStore } from "../src/services/store";
 import { generateBatch } from "../../shared/batch";
 import type { Store } from "../src/services/store";
+import {
+  _treeInstanceFor,
+  computeRoot,
+  buildProof
+} from "../src/services/merkleService";
+import { verifyProof } from "../../shared/merkle";
 
 function runContract(name: string, make: () => Store) {
   describe(`Store contract: ${name}`, () => {
@@ -58,3 +64,37 @@ function runContract(name: string, make: () => Store) {
 let tmpSeq = 0;
 runContract("SqliteStore(:memory:)", () => new SqliteStore(":memory:"));
 runContract("JsonStore(temp)", () => new JsonStore(`./data/store-test-${tmpSeq++}.json`));
+
+describe("merkle tree cache (Phase 4.1)", () => {
+  it("reuses one tree instance for the same batch (no rebuild)", () => {
+    const batch = generateBatch("CACHE-1", 8);
+    const t1 = _treeInstanceFor(batch);
+    const t2 = _treeInstanceFor(batch);
+    expect(t1).toBe(t2); // same reference → cached, not rebuilt
+    // computeRoot / buildProof reuse the same cached data.
+    expect(computeRoot(batch)).toBe(computeRoot(batch));
+  });
+
+  it("rebuilds when the products array is replaced (auto-invalidation)", () => {
+    const batch = generateBatch("CACHE-2", 8);
+    const t1 = _treeInstanceFor(batch);
+    const rootV1 = computeRoot(batch);
+    // Supersede-style replacement: new products array → new tree.
+    const superseded = {
+      ...batch,
+      products: batch.products.map((p) => ({ ...p, sku: "SKF-NEW" }))
+    };
+    const t2 = _treeInstanceFor(superseded);
+    expect(t2).not.toBe(t1);
+    expect(computeRoot(superseded)).not.toBe(rootV1);
+  });
+
+  it("cached proofs still verify against the cached root", () => {
+    const batch = generateBatch("CACHE-3", 10);
+    const root = computeRoot(batch);
+    for (const p of batch.products) {
+      const built = buildProof(batch, p);
+      expect(verifyProof(built.leaf, built.proof, root)).toBe(true);
+    }
+  });
+});

@@ -12,6 +12,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import { createApp } from "../src/server";
 import { store } from "../src/services/store";
+import { verifyProof } from "../../shared/merkle";
 
 const app = createApp();
 const BATCH = "BATCH-TEST";
@@ -89,6 +90,24 @@ describe("GET /batch/:batchId/tree", () => {
     expect(res.body.levels[0].nodes).toHaveLength(16);
     expect(res.body.levels[res.body.depth - 1].nodes).toHaveLength(1);
     expect(res.body.merkleRoot).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+});
+
+describe("GET /batch/:batchId/proofs (bulk, cached)", () => {
+  it("returns a proof for every product, each verifying against the root", async () => {
+    const res = await request(app).get(`/batch/${BATCH}/proofs`);
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(16);
+    expect(res.body.proofs).toHaveLength(16);
+    // Every returned proof must reconstruct the returned root.
+    for (const { leaf, proof } of res.body.proofs) {
+      expect(verifyProof(leaf, proof, res.body.merkleRoot)).toBe(true);
+    }
+  });
+
+  it("404s for an unknown batch", async () => {
+    const res = await request(app).get("/batch/NO-SUCH/proofs");
+    expect(res.status).toBe(404);
   });
 });
 

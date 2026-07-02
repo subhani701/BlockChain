@@ -83,9 +83,40 @@ export function buildTree(leaves: string[]): MerkleTree {
   });
 }
 
+// --- Tree-reusing primitives (Phase 4) --------------------------------------
+// These take a PREBUILT MerkleTree so a caller can build once and derive the
+// root/proof/levels many times without rebuilding (O(n)) each call. The
+// leaves[]-based functions below delegate to these for backward compatibility.
+
+/** Root (0x hex) from a prebuilt tree. */
+export function rootFromTree(tree: MerkleTree): string {
+  return toHex(tree.getRoot());
+}
+
+/** Proof (sibling hashes, 0x hex) for a leaf from a prebuilt tree. */
+export function proofFromTree(tree: MerkleTree, leaf: string): string[] {
+  return tree.getProof(toBuffer(leaf)).map((p) => toHex(p.data));
+}
+
+/** Annotated proof steps for a leaf from a prebuilt tree. */
+export function proofStepsFromTree(tree: MerkleTree, leaf: string): ProofStep[] {
+  return tree.getProof(toBuffer(leaf)).map((p) => ({
+    sibling: toHex(p.data),
+    position: p.position // 'left' | 'right'
+  }));
+}
+
+/** Every level (leaves..root) from a prebuilt tree. */
+export function levelsFromTree(tree: MerkleTree): MerkleLevel[] {
+  return tree.getLayers().map((layer, idx) => ({
+    level: idx,
+    nodes: layer.map(toHex)
+  }));
+}
+
 /** Return the Merkle Root of a set of leaves as a 0x hex string. */
 export function getRoot(leaves: string[]): string {
-  return toHex(buildTree(leaves).getRoot());
+  return rootFromTree(buildTree(leaves));
 }
 
 /**
@@ -93,8 +124,7 @@ export function getRoot(leaves: string[]): string {
  * hashes (0x hex). This is exactly what you pass to the smart contract.
  */
 export function getProof(leaves: string[], leaf: string): string[] {
-  const tree = buildTree(leaves);
-  return tree.getProof(toBuffer(leaf)).map((p) => toHex(p.data));
+  return proofFromTree(buildTree(leaves), leaf);
 }
 
 /**
@@ -103,11 +133,7 @@ export function getProof(leaves: string[], leaf: string): string[] {
  * running hash as we climb toward the root.
  */
 export function getProofSteps(leaves: string[], leaf: string): ProofStep[] {
-  const tree = buildTree(leaves);
-  return tree.getProof(toBuffer(leaf)).map((p) => ({
-    sibling: toHex(p.data),
-    position: p.position // 'left' | 'right'
-  }));
+  return proofStepsFromTree(buildTree(leaves), leaf);
 }
 
 /**
@@ -132,9 +158,5 @@ export function verifyProof(
  * visualization. merkletreejs exposes getLayers() returning Buffer[][].
  */
 export function getLevels(leaves: string[]): MerkleLevel[] {
-  const layers = buildTree(leaves).getLayers(); // Buffer[][]
-  return layers.map((layer, idx) => ({
-    level: idx,
-    nodes: layer.map(toHex)
-  }));
+  return levelsFromTree(buildTree(leaves));
 }
