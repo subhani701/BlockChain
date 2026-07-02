@@ -28,11 +28,13 @@ import type { Product } from "./types";
 
 /**
  * Version tag for the canonical leaf specification.
- * 2.0.0 — leaves are DOUBLE-hashed: keccak256(keccak256(utf8(canonicalJSON)))
- *         (second-preimage safe; matches @openzeppelin/merkle-tree). A change
+ * 3.0.0 — OpenZeppelin StandardMerkleTree leaf:
+ *         keccak256(keccak256(abi.encode(["string","string","string","string"],
+ *                                        [serial, sku, batch_id, manufactured_at])))
+ *         (double-hashed, second-preimage safe, ecosystem-interoperable). A change
  *         here changes every leaf/root and must be coordinated + re-anchored.
  */
-export const LEAF_SPEC_VERSION = "2.0.0";
+export const LEAF_SPEC_VERSION = "3.0.0";
 
 /**
  * Thrown when a product fails validation. Carries the offending `field` so

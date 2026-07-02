@@ -206,9 +206,10 @@ contract ProductRegistry is AccessControl, Pausable {
      *      check use {verifyProductView} instead.
      *
      *      The leaf MUST be computed exactly as (off-chain, see shared/hash.ts):
-     *        keccak256(utf8(JSON.stringify({serial, sku, batch_id, manufactured_at})))
-     *      and the tree MUST be built with sorted sibling pairs (merkletreejs
-     *      `sortPairs: true`) so it matches OpenZeppelin's hashing convention.
+     *        keccak256(keccak256(abi.encode(4x string, serial/sku/batch_id/manufactured_at)))
+     *      and the tree MUST be built with OpenZeppelin's merkle-tree library
+     *      (Standard/Simple Merkle tree) so it matches OpenZeppelin's on-chain
+     *      MerkleProof.verify (sorted, commutative keccak256 node hashing).
      *
      * @param batchId The batch to verify against.
      * @param proof   Array of sibling hashes from leaf up to the root.

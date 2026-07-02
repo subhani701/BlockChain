@@ -14,34 +14,34 @@
  * runnable by Truffle without a TypeScript loader.
  * -----------------------------------------------------------------------------
  */
-const { MerkleTree } = require("merkletreejs");
-const keccak256 = require("keccak256");
+const { SimpleMerkleTree } = require("@openzeppelin/merkle-tree");
+const { keccak256, AbiCoder } = require("ethers");
 
 const ProductRegistry = artifacts.require("ProductRegistry");
 
 // --- Off-chain helpers (mirror shared/hash.ts + shared/merkle.ts) -----------
+// LEAF SPEC 3.0.0 — OpenZeppelin StandardMerkleTree leaf:
+//   leaf = keccak256(keccak256(abi.encode(4×string, [serial,sku,batch_id,manufactured_at])))
+// Trees are built with @openzeppelin/merkle-tree (SimpleMerkleTree over these
+// leaves == StandardMerkleTree over the values), so proofs verify with the
+// contract's OpenZeppelin MerkleProof.verify. This test therefore proves the
+// full OZ toolchain (off-chain) ↔ on-chain compatibility.
 
-const toBuf = (hex) => Buffer.from(hex.replace(/^0x/, ""), "hex");
-const toHex = (buf) => "0x" + buf.toString("hex");
+const ENC = ["string", "string", "string", "string"];
+const abi = AbiCoder.defaultAbiCoder();
+const toVal = (p) => [p.serial, p.sku, p.batch_id, p.manufactured_at];
 
-// leaf = keccak256(keccak256(utf8(JSON.stringify({serial, sku, batch_id, manufactured_at}))))
-// DOUBLE-hashed, second-preimage safe — mirrors shared/hash.ts (LEAF SPEC 2.0.0).
 function hashProduct(p) {
-  const canonical = JSON.stringify({
-    serial: p.serial,
-    sku: p.sku,
-    batch_id: p.batch_id,
-    manufactured_at: p.manufactured_at
-  });
-  const inner = keccak256(Buffer.from(canonical, "utf8")); // Buffer (32 bytes)
-  return toHex(keccak256(inner)); // keccak256 of the 32-byte inner hash
+  return keccak256(keccak256(abi.encode(ENC, toVal(p))));
 }
 
+// Wrapper preserving the getHexRoot()/getHexProof(leaf) API used by the tests.
 function buildTree(leaves) {
-  return new MerkleTree(leaves.map(toBuf), keccak256, {
-    sortPairs: true,
-    hashLeaves: false
-  });
+  const t = SimpleMerkleTree.of(leaves, { sortLeaves: true });
+  return {
+    getHexRoot: () => t.root,
+    getHexProof: (leaf) => t.getProof(leaf)
+  };
 }
 
 function makeBatch(batchId, count) {

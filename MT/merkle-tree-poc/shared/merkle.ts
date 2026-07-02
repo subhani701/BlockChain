@@ -1,51 +1,31 @@
 /**
  * shared/merkle.ts
  * -----------------------------------------------------------------------------
- * Merkle Tree construction, root extraction, and proof generation.
+ * Merkle tree construction, root, and proofs — built on
+ * `@openzeppelin/merkle-tree` (LEAF SPEC 3.0.0).
  *
- * We use:
- *   - merkletreejs : builds the tree, computes the root, generates proofs.
- *   - keccak256    : the hash function used for INTERNAL (parent) nodes.
+ * We use `SimpleMerkleTree` over pre-hashed leaves (from shared/hash.ts, which
+ * uses the StandardMerkleTree leaf encoding). SimpleMerkleTree with
+ * `sortLeaves: true` produces the SAME root/proofs as StandardMerkleTree over
+ * the raw values, and its proofs verify with OpenZeppelin's on-chain
+ * `MerkleProof.verify` (sorted, commutative keccak256 node hashing). This also
+ * unlocks multiproofs (tree.getMultiProof).
  *
- * CRITICAL configuration: { sortPairs: true }
- * -------------------------------------------
- * When hashing two child nodes into a parent, there are two conventions:
- *   parent = keccak256(left ++ right)              (order-dependent)
- *   parent = keccak256(sort(a, b)[0] ++ sort(...)[1])  (order-independent)
- *
- * OpenZeppelin's MerkleProof library uses the SORTED variant, so we MUST set
- * sortPairs: true. This also means a proof does not need to encode left/right
- * positions — the verifier derives ordering by comparing bytes. (We still
- * surface a derived position in the UI for teaching purposes.)
- *
- * Leaves are ALREADY keccak256 hashes (see hash.ts), so we tell merkletreejs
- * NOT to re-hash them.
+ * Node hashing (for off-chain verify + proof-step positions) mirrors OZ exactly:
+ *   parent = keccak256( sort(a, b)[0] ++ sort(a, b)[1] )
  * -----------------------------------------------------------------------------
  */
-import { MerkleTree } from "merkletreejs";
-import keccak256 from "keccak256";
+import { SimpleMerkleTree } from "@openzeppelin/merkle-tree";
+import { keccak256, concat } from "ethers";
 import type { MerkleLevel, ProofStep } from "./types";
 
 /**
- * ODD-LEAF CONVENTION (audit item #6) — locked to "promote".
- * -------------------------------------------------------------------------
- * When a tree level has an odd number of nodes, the lonely last node can be:
- *   - "promote"   : carried up UNCHANGED to the next level  ← WE USE THIS
- *   - "duplicate" : hashed with itself (hash(h, h))
- * These produce DIFFERENT roots, so every producer/verifier MUST agree.
- * merkletreejs promotes by default (duplicateOdd = false); we set it
- * EXPLICITLY below so the convention can never drift silently, and OZ's
- * on-chain MerkleProof.verify is compatible with the promote convention
- * (proven by the odd-sized contract test). NOTE: merkle.md's illustrative
- * sample uses "duplicate" — do NOT copy that into production code.
+ * Odd-leaf / construction convention — delegated to @openzeppelin/merkle-tree
+ * (the industry standard). Every producer/verifier must use the same library.
  */
-export const ODD_LEAF_CONVENTION = "promote" as const;
+export const ODD_LEAF_CONVENTION = "openzeppelin" as const;
 
-/**
- * Thrown when a Merkle operation is attempted on zero leaves. An empty batch has
- * no meaningful root (and the on-chain contract rejects a zero root / zero
- * product count), so we fail loudly here rather than emit a bogus "0x" root.
- */
+/** Thrown when a Merkle operation is attempted on zero leaves. */
 export class EmptyBatchError extends Error {
   constructor() {
     super("EmptyBatchError: cannot build a Merkle tree from zero leaves");
@@ -54,109 +34,122 @@ export class EmptyBatchError extends Error {
   }
 }
 
-/** Convert a 0x-hex string to a Buffer that merkletreejs understands. */
-function toBuffer(hex: string): Buffer {
-  return Buffer.from(hex.replace(/^0x/, ""), "hex");
-}
-
-/** Convert a Buffer back to a 0x-prefixed lowercase hex string. */
-function toHex(buf: Buffer): string {
-  return "0x" + buf.toString("hex");
+/** OZ node hash: keccak256 of the sorted concatenation of two 32-byte hashes. */
+function nodeHash(a: string, b: string): string {
+  const [lo, hi] = a.toLowerCase() <= b.toLowerCase() ? [a, b] : [b, a];
+  return keccak256(concat([lo, hi]));
 }
 
 /**
- * Build a MerkleTree from a list of leaf hashes (0x hex strings).
- * @returns the merkletreejs MerkleTree instance.
+ * Build a Merkle tree from a list of leaf hashes (0x hex). Uses SimpleMerkleTree
+ * with sorted leaves so the root matches StandardMerkleTree and OZ MerkleProof.
  */
-export function buildTree(leaves: string[]): MerkleTree {
+export function buildTree(leaves: string[]): SimpleMerkleTree {
   if (!Array.isArray(leaves) || leaves.length === 0) {
     throw new EmptyBatchError();
   }
-  const leafBuffers = leaves.map(toBuffer);
-  return new MerkleTree(leafBuffers, keccak256, {
-    sortPairs: true, // Match OpenZeppelin MerkleProof (commutative hashing).
-    // Leaves are already hashed; do not hash again.
-    hashLeaves: false,
-    // Lock the odd-leaf convention to "promote" (see ODD_LEAF_CONVENTION).
-    // This is merkletreejs's default, set explicitly to prevent silent drift.
-    duplicateOdd: false
-  });
+  return SimpleMerkleTree.of(leaves, { sortLeaves: true });
 }
 
-// --- Tree-reusing primitives (Phase 4) --------------------------------------
-// These take a PREBUILT MerkleTree so a caller can build once and derive the
-// root/proof/levels many times without rebuilding (O(n)) each call. The
-// leaves[]-based functions below delegate to these for backward compatibility.
+// --- Tree-reusing primitives (a prebuilt tree is reused across derivations) ---
 
 /** Root (0x hex) from a prebuilt tree. */
-export function rootFromTree(tree: MerkleTree): string {
-  return toHex(tree.getRoot());
+export function rootFromTree(tree: SimpleMerkleTree): string {
+  return tree.root;
 }
 
 /** Proof (sibling hashes, 0x hex) for a leaf from a prebuilt tree. */
-export function proofFromTree(tree: MerkleTree, leaf: string): string[] {
-  return tree.getProof(toBuffer(leaf)).map((p) => toHex(p.data));
+export function proofFromTree(tree: SimpleMerkleTree, leaf: string): string[] {
+  return tree.getProof(leaf);
 }
 
-/** Annotated proof steps for a leaf from a prebuilt tree. */
-export function proofStepsFromTree(tree: MerkleTree, leaf: string): ProofStep[] {
-  return tree.getProof(toBuffer(leaf)).map((p) => ({
-    sibling: toHex(p.data),
-    position: p.position // 'left' | 'right'
-  }));
+/**
+ * Annotated proof steps (sibling + left/right position) from a prebuilt tree.
+ * OZ proofs carry only hashes; we derive the side by replaying the sorted climb.
+ */
+export function proofStepsFromTree(
+  tree: SimpleMerkleTree,
+  leaf: string
+): ProofStep[] {
+  const proof = tree.getProof(leaf);
+  let running = leaf;
+  return proof.map((sibling) => {
+    // In a sorted pair the smaller value is concatenated first (on the "left").
+    const position: "left" | "right" =
+      sibling.toLowerCase() <= running.toLowerCase() ? "left" : "right";
+    running = nodeHash(running, sibling);
+    return { sibling, position };
+  });
 }
 
-/** Every level (leaves..root) from a prebuilt tree. */
-export function levelsFromTree(tree: MerkleTree): MerkleLevel[] {
-  return tree.getLayers().map((layer, idx) => ({
-    level: idx,
-    nodes: layer.map(toHex)
-  }));
+/**
+ * Every level of the tree (level 0 = leaves … top = root), reconstructed from
+ * the OZ heap-array dump for visualization. For non-power-of-2 batches some
+ * leaves sit one level up (OZ's balanced layout) — cosmetic only.
+ */
+export function levelsFromTree(tree: SimpleMerkleTree): MerkleLevel[] {
+  const nodes = tree.dump().tree as string[]; // heap: index 0 = root, children 2i+1/2i+2
+  const heapDepth = (i: number) => Math.floor(Math.log2(i + 1));
+  const maxDepth = heapDepth(nodes.length - 1);
+  const byLevel = new Map<number, string[]>();
+  nodes.forEach((h, i) => {
+    const level = maxDepth - heapDepth(i); // 0 = deepest (leaves), maxDepth = root
+    const bucket = byLevel.get(level);
+    if (bucket) bucket.push(h);
+    else byLevel.set(level, [h]);
+  });
+  const levels: MerkleLevel[] = [];
+  for (let l = 0; l <= maxDepth; l++) {
+    levels.push({ level: l, nodes: byLevel.get(l) ?? [] });
+  }
+  return levels;
 }
+
+// --- leaves[]-based helpers (build then derive) -----------------------------
 
 /** Return the Merkle Root of a set of leaves as a 0x hex string. */
 export function getRoot(leaves: string[]): string {
   return rootFromTree(buildTree(leaves));
 }
 
-/**
- * Generate the Merkle Proof for a single leaf as a flat list of sibling
- * hashes (0x hex). This is exactly what you pass to the smart contract.
- */
+/** Generate the Merkle Proof (sibling hashes) for a single leaf. */
 export function getProof(leaves: string[], leaf: string): string[] {
   return proofFromTree(buildTree(leaves), leaf);
 }
 
-/**
- * Generate the proof annotated with sibling position (left/right) for the UI.
- * The position tells you which side the sibling sits on relative to the
- * running hash as we climb toward the root.
- */
+/** Generate the proof annotated with sibling positions (for the UI). */
 export function getProofSteps(leaves: string[], leaf: string): ProofStep[] {
   return proofStepsFromTree(buildTree(leaves), leaf);
 }
 
+/** Every level (leaves..root) for visualization. */
+export function getLevels(leaves: string[]): MerkleLevel[] {
+  return levelsFromTree(buildTree(leaves));
+}
+
 /**
- * Verify a proof off-chain (mirrors what the contract does on-chain). Useful in
- * tests and for instant UI feedback before/without a blockchain round-trip.
+ * Verify a proof off-chain — replays OZ's sorted-pair climb (identical to the
+ * on-chain MerkleProof.verify). Works for ANY leaf/proof/root (e.g. a tampered
+ * leaf), independent of the tree instance.
  */
 export function verifyProof(
   leaf: string,
   proof: string[],
   root: string
 ): boolean {
-  const tree = buildTree([leaf]); // tree instance only used for its verify().
-  return tree.verify(
-    proof.map(toBuffer),
-    toBuffer(leaf),
-    toBuffer(root)
-  );
+  const computed = proof.reduce((acc, sibling) => nodeHash(acc, sibling), leaf);
+  return computed.toLowerCase() === root.toLowerCase();
 }
 
-/**
- * Reconstruct EVERY level of the tree (leaves at level 0 up to the root) for
- * visualization. merkletreejs exposes getLayers() returning Buffer[][].
- */
-export function getLevels(leaves: string[]): MerkleLevel[] {
-  return levelsFromTree(buildTree(leaves));
+/** Generate a multiproof (proof + flags) for several leaves — OZ multiProofVerify. */
+export function getMultiProof(
+  leaves: string[],
+  subset: string[]
+): { leaves: string[]; proof: string[]; proofFlags: boolean[] } {
+  const mp = buildTree(leaves).getMultiProof(subset);
+  return {
+    leaves: mp.leaves.map((l) => String(l)),
+    proof: mp.proof.map((p) => String(p)),
+    proofFlags: mp.proofFlags
+  };
 }

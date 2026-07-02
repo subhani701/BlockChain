@@ -27,6 +27,7 @@
     "truffle": "^5.11.5"
   },
   "dependencies": {
+    "@openzeppelin/merkle-tree": "^1.0.8",
     "ethers": "^6.13.4",
     "keccak256": "^1.0.6",
     "merkletreejs": "^0.4.0"

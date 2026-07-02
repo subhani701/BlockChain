@@ -39,11 +39,11 @@ describe("hashing", () => {
     expect(hashProduct(a)).not.toBe(hashProduct(b));
   });
 
-  it("exposes the canonical JSON that gets hashed", () => {
+  it("exposes the ABI-encoded value tuple for display", () => {
     const enc = encodeProductForDisplay(batch.products[0]);
-    expect(enc).toContain('"serial":"SN-BATCH-001-0001"');
-    expect(enc).toContain('"sku":"SKF-6205-2RS"');
-    expect(enc).toContain('"batch_id":"BATCH-001"');
+    expect(enc).toContain("abi.encode");
+    expect(enc).toContain("SN-BATCH-001-0001");
+    expect(enc).toContain("SKF-6205-2RS");
   });
 });
 
@@ -52,12 +52,16 @@ describe("merkle tree", () => {
     expect(root).toMatch(/^0x[0-9a-f]{64}$/);
   });
 
-  it("has ceil(log2(n)) + 1 levels for 100 leaves", () => {
+  it("reconstructs levels ending in the single root", () => {
     const levels = getLevels(leaves);
-    // 100 leaves -> 100,50,25,13,7,4,2,1 = 8 levels.
-    expect(levels[0].nodes.length).toBe(100);
+    // OZ's balanced layout: for non-power-of-2 counts leaves may span the two
+    // deepest levels, so we assert the invariant (top = root) not exact counts.
+    expect(levels.length).toBeGreaterThan(1);
     expect(levels[levels.length - 1].nodes.length).toBe(1);
     expect(levels[levels.length - 1].nodes[0]).toBe(root);
+    // Total nodes in the tree = 2n - 1.
+    const total = levels.reduce((s, l) => s + l.nodes.length, 0);
+    expect(total).toBe(2 * leaves.length - 1);
   });
 });
 
@@ -117,9 +121,9 @@ describe("single-leaf tree", () => {
   });
 });
 
-describe("odd-leaf handling (promote convention)", () => {
-  it("declares the promote convention", () => {
-    expect(ODD_LEAF_CONVENTION).toBe("promote");
+describe("odd-leaf handling (@openzeppelin/merkle-tree)", () => {
+  it("declares the openzeppelin convention", () => {
+    expect(ODD_LEAF_CONVENTION).toBe("openzeppelin");
   });
 
   // Odd counts force a lonely node at one or more levels. Every product —

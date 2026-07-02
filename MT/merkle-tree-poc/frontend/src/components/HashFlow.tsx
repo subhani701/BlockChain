@@ -48,11 +48,11 @@ export function HashFlow({ product, encoded, leaf }: Props) {
           · made={product.manufactured_at}
         </span>
       </Step>
-      <Arrow>JSON.stringify (canonical, fixed key order)</Arrow>
-      <Step index="2" label="Canonical JSON (bytes that get hashed)">
+      <Arrow>abi.encode (StandardMerkleTree, fixed order)</Arrow>
+      <Step index="2" label="ABI-encoded values (the bytes that get hashed)">
         <span className="break-all">{encoded}</span>
       </Step>
-      <Arrow>keccak256 × 2 (double-hash)</Arrow>
+      <Arrow>keccak256 × 2 (double-hash — OpenZeppelin standard)</Arrow>
       <Step index="3" label="Leaf hash (32 bytes, double-hashed)">
         <span className="break-all text-primary">{leaf}</span>
       </Step>

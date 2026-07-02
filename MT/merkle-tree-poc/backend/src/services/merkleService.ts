@@ -12,7 +12,7 @@
  * with no manual bookkeeping and zero staleness risk.
  * -----------------------------------------------------------------------------
  */
-import { MerkleTree } from "merkletreejs";
+import { SimpleMerkleTree } from "@openzeppelin/merkle-tree";
 import { encodeProductForDisplay, hashProduct } from "../../../shared/hash";
 import {
   buildTree,
@@ -32,7 +32,7 @@ import type {
 
 interface MerkleData {
   leaves: string[];
-  tree: MerkleTree;
+  tree: SimpleMerkleTree;
   root: string;
 }
 
@@ -53,7 +53,7 @@ function dataFor(batch: Batch): MerkleData {
 }
 
 /** Test/inspection helper: the cached MerkleTree instance for a batch. */
-export function _treeInstanceFor(batch: Batch): MerkleTree {
+export function _treeInstanceFor(batch: Batch): SimpleMerkleTree {
   return dataFor(batch).tree;
 }
 

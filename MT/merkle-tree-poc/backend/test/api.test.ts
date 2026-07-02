@@ -31,7 +31,7 @@ describe("POST /batch/create", () => {
     expect(res.body.totalProducts).toBe(16);
     expect(res.body.products).toHaveLength(16);
     expect(res.body.products[0].leaf).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(res.body.products[0].encoded).toContain('"serial":"SN-BATCH-TEST-0001"');
+    expect(res.body.products[0].encoded).toContain("SN-BATCH-TEST-0001");
   });
 
   it("rejects duplicate batch ids", async () => {

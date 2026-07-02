@@ -48,8 +48,8 @@ Products  →  Leaf Hashes  →  Parent Hashes  →  Merkle Root  →  Ethereum
 ```
 
 - **Off-chain** (backend + `shared/`): generate batch, hash products
-  (`keccak256` of a canonical JSON of `{serial, sku, batch_id, manufactured_at}`),
-  build the Merkle tree (`merkletreejs`), derive root + proofs.
+  (double-`keccak256` of `abi.encode({serial, sku, batch_id, manufactured_at})` (OZ StandardMerkleTree)),
+  build the Merkle tree (`@openzeppelin/merkle-tree`), derive root + proofs.
 - **On-chain** (`ProductRegistry.sol`): store the root, verify proofs using
   OpenZeppelin's `MerkleProof`; the backend talks to it with **Ethers.js (v6)**.
 - The off-chain hashing is **byte-for-byte identical** to Solidity's, so proofs
@@ -158,7 +158,7 @@ The UI mirrors the conceptual lifecycle end to end:
 | Step | Page | What happens |
 |------|------|--------------|
 | 1 | Batch & Tree | Generate `BATCH-001` with N products (`SKU-0001…`). |
-| 2 | Batch & Tree | Each product → canonical JSON → `keccak256` **leaf**. |
+| 2 | Batch & Tree | Each product → abi.encode → double `keccak256` **leaf** (OZ StandardMerkleTree). |
 | 3 | Batch & Tree | Build the Merkle tree, display every level + the **root**. |
 | 4 | Batch & Tree | **Register** only the root on Ethereum (see tx hash + gas). |
 | 5 | Proof | Pick a product → generate its **leaf + proof**, visualize the path. |
@@ -239,15 +239,20 @@ A **hash function** maps arbitrary input to a fixed-size output (a "digest" or
 family; Ethereum adopted it before the final NIST SHA3 padding tweak, so
 "keccak256" ≠ "SHA3-256"). It outputs **32 bytes** (256 bits).
 
-The leaf is built from the product fields with a **canonical JSON
-serialization** (aligned to the VoltusWave / SKF model and `merkle.md`):
+The leaf uses the **OpenZeppelin `StandardMerkleTree`** convention — a double
+hash of the ABI-encoded typed values (leaf spec 3.0.0):
 
 ```ts
-// shared/hash.ts — fixed key order: serial, sku, batch_id, manufactured_at
-const canonical = JSON.stringify({ serial, sku, batch_id, manufactured_at });
-// DOUBLE-hash (second-preimage safe; matches @openzeppelin/merkle-tree):
-const leaf = keccak256(keccak256(toUtf8Bytes(canonical)));   // 0x… 32-byte hash
+// shared/hash.ts — fixed order: serial, sku, batch_id, manufactured_at
+const enc = ["string", "string", "string", "string"];
+const inner = keccak256(AbiCoder.defaultAbiCoder().encode(enc,
+  [serial, sku, batch_id, manufactured_at]));
+const leaf = keccak256(inner);   // == @openzeppelin/merkle-tree StandardMerkleTree.leafHash
 ```
+
+Trees are built with `@openzeppelin/merkle-tree` (`SimpleMerkleTree` over these
+leaves == `StandardMerkleTree` over the values), giving ecosystem interop and
+OZ-compatible single- and multi-proofs.
 
 **Why this matters:** the contract recomputes the root from a leaf you supply.
 If your off-chain leaf bytes differ even slightly, the roots never match and

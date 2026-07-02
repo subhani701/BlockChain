@@ -311,7 +311,7 @@ export function GenerateBatchPage() {
                     </div>
                     <p className="mt-1 text-xs text-muted-foreground">
                       Depth {tree.depth} levels · this single root commits to all{" "}
-                      {tree.levels[0].nodes.length} products.
+                      {batch.totalProducts} products.
                     </p>
                   </div>
                   <MerkleTreeView levels={tree.levels} />

@@ -1,77 +1,58 @@
 /**
  * shared/hash.ts
  * -----------------------------------------------------------------------------
- * Solidity-compatible leaf hashing, aligned to the VoltusWave / SKF project
- * (see merkle.md §7-§9).
+ * Leaf hashing — OpenZeppelin StandardMerkleTree convention (LEAF SPEC 3.0.0).
  *
- * LEAF DEFINITION (must be identical on prover and verifier — merkle.md §10 #3):
+ *   leaf = keccak256( keccak256( abi.encode(
+ *            ["string","string","string","string"],
+ *            [serial, sku, batch_id, manufactured_at] ) ) )
  *
- *   leaf = keccak256( utf8Bytes( JSON.stringify({ serial, sku, batch_id, manufactured_at }) ) )
+ * This is byte-for-byte identical to `@openzeppelin/merkle-tree`'s
+ * `StandardMerkleTree.leafHash(value)`, so:
+ *   - leaves are DOUBLE-hashed (second-preimage / leaf-node-confusion safe),
+ *   - the encoding is standard `abi.encode` of typed values (ecosystem interop),
+ *   - trees built with @openzeppelin/merkle-tree (Standard/Simple) verify with
+ *     OpenZeppelin's on-chain `MerkleProof.verify`.
  *
- * Two things make this Ethereum- and project-compatible:
- *   1. keccak256 (not SHA-256) — the hash Ethereum/Solidity uses. (merkle.md §4 "Phase 4".)
- *   2. A CANONICAL serialization with a FIXED key order. We build the object
- *      ourselves in a guaranteed order so the bytes never depend on the input
- *      object's key ordering. Any difference in keys, order, or whitespace
- *      would change the hash and break verification.
- *
- * The on-chain contract never recomputes the leaf from fields — it receives the
- * 32-byte leaf and only does the sorted-pair climb (OpenZeppelin MerkleProof).
- * So the leaf can be a keccak256 of JSON; both sides simply must agree on it.
+ * Values are validated + normalized first (see validate.ts) so the encoded bytes
+ * are always canonical regardless of caller field order / formatting.
  * -----------------------------------------------------------------------------
  */
-import { keccak256, toUtf8Bytes } from "ethers";
+import { keccak256, AbiCoder, toUtf8Bytes } from "ethers";
 import type { Product } from "./types";
 import { normalizeProduct } from "./validate";
 
-/**
- * The canonical string that gets hashed into a leaf. FIXED key order:
- *   serial, sku, batch_id, manufactured_at
- * Changing this order (or the keys) changes every leaf and root — do not edit
- * without changing it identically everywhere (backend, tests, on-chain prover).
- */
-export function canonicalLeaf(product: Product): string {
-  // Validate + normalize FIRST so the hashed bytes are always canonical
-  // (fixed key order here, canonical field values from normalizeProduct).
-  // Throws ProductValidationError on invalid input — a leaf must never be
-  // computed from malformed data.
+/** ABI leaf encoding (order matters — must match every producer + the tests). */
+export const LEAF_ENCODING = ["string", "string", "string", "string"] as const;
+
+const abi = AbiCoder.defaultAbiCoder();
+
+/** The typed value tuple that gets ABI-encoded, in fixed order. */
+export function productValue(product: Product): [string, string, string, string] {
   const p = normalizeProduct(product);
-  return JSON.stringify({
-    serial: p.serial,
-    sku: p.sku,
-    batch_id: p.batch_id,
-    manufactured_at: p.manufactured_at
-  });
+  return [p.serial, p.sku, p.batch_id, p.manufactured_at];
 }
 
 /**
- * Human-readable form shown in the UI between "Product" and "Hash". Here it is
- * literally the canonical JSON that gets hashed (not a separate encoding).
+ * Human-readable description of what gets hashed (for the UI). Shows the typed
+ * value tuple that is ABI-encoded then double-keccak256'd.
  */
 export function encodeProductForDisplay(product: Product): string {
-  return canonicalLeaf(product);
+  const [serial, sku, batch_id, manufactured_at] = productValue(product);
+  return `abi.encode(string,string,string,string) → [${serial}, ${sku}, ${batch_id}, ${manufactured_at}]`;
 }
 
 /**
- * Compute the Merkle LEAF for a product:
- *   keccak256(utf8(JSON.stringify({ serial, sku, batch_id, manufactured_at })))
+ * Compute the Merkle LEAF for a product (StandardMerkleTree convention):
+ *   keccak256(keccak256(abi.encode(types, values)))
  * Returns a 0x-prefixed 32-byte hex string.
  */
 export function hashProduct(product: Product): string {
-  // DOUBLE-HASH the leaf (OpenZeppelin-recommended, second-preimage safe):
-  //   inner = keccak256(utf8(canonicalJSON))   // 32 bytes
-  //   leaf  = keccak256(inner)
-  //
-  // WHY: an internal tree node is keccak256(concat(32B,32B)) — 32 bytes. A
-  // single-hashed leaf keccak256(data) is also 32 bytes, so a 64-byte node
-  // preimage could be reinterpreted as a "leaf", enabling a leaf/node-confusion
-  // (second-preimage) attack. Hashing the 32-byte inner hash again makes leaf
-  // and node preimages structurally distinct. This matches @openzeppelin/merkle-tree.
-  const inner = keccak256(toUtf8Bytes(canonicalLeaf(product)));
+  const inner = keccak256(abi.encode([...LEAF_ENCODING], productValue(product)));
   return keccak256(inner);
 }
 
-/** Raw keccak256 of an arbitrary UTF-8 string (handy for ad-hoc demos). */
+/** Raw keccak256 of an arbitrary UTF-8 string (ad-hoc demo helper). */
 export function keccakString(input: string): string {
   return keccak256(toUtf8Bytes(input));
 }

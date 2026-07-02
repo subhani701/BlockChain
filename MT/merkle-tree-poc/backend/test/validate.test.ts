@@ -16,7 +16,7 @@ import {
   DuplicateProductError,
   LEAF_SPEC_VERSION
 } from "../../shared/validate";
-import { canonicalLeaf, hashProduct } from "../../shared/hash";
+import { encodeProductForDisplay, hashProduct } from "../../shared/hash";
 import { generateBatch } from "../../shared/batch";
 import type { Product } from "../../shared/types";
 
@@ -168,19 +168,20 @@ describe("duplicate-serial handling", () => {
   });
 });
 
-describe("canonicalLeaf / hashProduct — determinism & golden vector", () => {
-  it("produces the exact canonical JSON (fixed key order, no whitespace)", () => {
-    expect(canonicalLeaf(VALID)).toBe(
-      '{"serial":"SN-BATCH-001-0001","sku":"SKF-6205-2RS","batch_id":"BATCH-001","manufactured_at":"2023-11-14T22:14:20.000Z"}'
-    );
+describe("hashProduct — determinism & golden vector (StandardMerkleTree leaf)", () => {
+  it("exposes the ABI-encoded value tuple for display", () => {
+    const enc = encodeProductForDisplay(VALID);
+    expect(enc).toContain("abi.encode");
+    expect(enc).toContain("SN-BATCH-001-0001");
+    expect(enc).toContain("SKF-6205-2RS");
   });
 
   it("matches the GOLDEN leaf hash (locks the bytes — must never drift)", () => {
-    // LEAF SPEC 2.0.0: leaf = keccak256(keccak256(utf8(canonicalJSON))) (double-hash).
-    // If this value changes, the leaf spec changed → bump LEAF_SPEC_VERSION and
-    // coordinate with every producer + re-anchor roots on-chain.
+    // LEAF SPEC 3.0.0: leaf = keccak256(keccak256(abi.encode(4×string))) — the
+    // @openzeppelin/merkle-tree StandardMerkleTree leaf. If this value changes,
+    // the leaf spec changed → bump LEAF_SPEC_VERSION + re-anchor roots on-chain.
     expect(hashProduct(VALID)).toBe(
-      "0x23375ae58672ed83b934bd5ec5631c0541bd0ac2bdb31a8d29cc5334f70787f4"
+      "0xc83200d9db0989c1c390a730f82a271c5aff9700a9139a84d814e923cf80b345"
     );
   });
 
@@ -193,11 +194,9 @@ describe("canonicalLeaf / hashProduct — determinism & golden vector", () => {
   });
 
   it("generated batch leaves match the current leaf spec", () => {
-    // generateBatch emits canonical toISOString() dates, so a generated product
-    // and the hand-built VALID product hash identically under the current spec.
     const batch = generateBatch("BATCH-001", 4);
     expect(hashProduct(batch.products[0])).toBe(
-      "0x23375ae58672ed83b934bd5ec5631c0541bd0ac2bdb31a8d29cc5334f70787f4"
+      "0xc83200d9db0989c1c390a730f82a271c5aff9700a9139a84d814e923cf80b345"
     );
   });
 });
