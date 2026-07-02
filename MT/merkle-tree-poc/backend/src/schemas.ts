@@ -20,6 +20,14 @@ export const registerBatchSchema = z.object({
   batchId: z.string().min(1, "batchId is required")
 });
 
+// Supersede requires the CORRECTED product list (new data → new root). batchId
+// comes from the URL param, not the body.
+export const supersedeBatchSchema = z.object({
+  products: z
+    .array(z.record(z.string(), z.unknown()))
+    .min(1, "products must be a non-empty array")
+});
+
 export const verifySchema = z.object({
   batchId: z.string().min(1, "batchId is required"),
   serial: z.string().optional(),

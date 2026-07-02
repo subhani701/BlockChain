@@ -11,6 +11,7 @@
 import fs from "fs";
 import { ethers, Contract, JsonRpcProvider } from "ethers";
 import { config } from "../config";
+import { logger } from "../logger";
 import type { OnChainInfo } from "../../../shared/types";
 
 interface ChainContext {
@@ -76,10 +77,9 @@ export async function getChain(): Promise<ChainContext> {
   const contract = new ethers.Contract(address, artifact.abi, signer);
 
   ctx = { provider, contract, address, manufacturer, accounts };
-  // eslint-disable-next-line no-console
-  console.log(
-    `[chain] connected to ${config.rpcUrl} | contract ${address} | ` +
-      `manufacturer ${manufacturer}`
+  logger.info(
+    { rpcUrl: config.rpcUrl, contract: address, manufacturer },
+    "connected to chain"
   );
   return ctx;
 }
@@ -144,15 +144,44 @@ export async function getBatchOnChain(batchId: string): Promise<{
   merkleRoot: string;
   totalProducts: number;
   createdAt: number;
+  updatedAt: number;
+  version: number;
 }> {
   const { contract } = await getChain();
-  // getBatch returns named outputs (id, merkleRoot, totalProducts, createdAt).
+  // getBatch returns (id, merkleRoot, totalProducts, createdAt, updatedAt, version).
   const result = await contract.getBatch(batchId);
   return {
     batchId: result.id,
     merkleRoot: result.merkleRoot,
     totalProducts: Number(result.totalProducts),
-    createdAt: Number(result.createdAt)
+    createdAt: Number(result.createdAt),
+    updatedAt: Number(result.updatedAt),
+    version: Number(result.version)
+  };
+}
+
+/**
+ * Supersede an existing batch's root on-chain (batch versioning). Returns the
+ * transaction details plus the new version number read back from the contract.
+ */
+export async function supersedeBatchOnChain(
+  batchId: string,
+  newMerkleRoot: string,
+  totalProducts: number
+): Promise<OnChainInfo & { version: number }> {
+  const { contract, manufacturer, address } = await getChain();
+
+  const tx = await contract.supersedeBatch(batchId, newMerkleRoot, totalProducts);
+  const receipt = await tx.wait();
+  const info = await contract.getBatch(batchId);
+
+  return {
+    txHash: receipt.hash,
+    blockNumber: Number(receipt.blockNumber),
+    gasUsed: Number(receipt.gasUsed),
+    contractAddress: address,
+    registeredBy: manufacturer,
+    version: Number(info.version)
   };
 }
 

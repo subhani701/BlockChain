@@ -48,10 +48,13 @@ contract ProductRegistry is AccessControl, Pausable {
      *      Note we store the MERKLE ROOT, not the products themselves.
      */
     struct Batch {
-        string batchId;        // Human-readable batch identifier, e.g. "BATCH-001".
-        bytes32 merkleRoot;    // Root of the Merkle Tree built from product leaves.
-        uint256 totalProducts; // How many products are committed under this root.
-        uint256 createdAt;     // Block timestamp when the batch was registered.
+        // NOTE: the human-readable batchId is the mapping KEY, so we do not store
+        // it again in the struct (gas: avoids a redundant string SSTORE — 3.4).
+        bytes32 merkleRoot;    // Current Merkle root (latest version).
+        uint256 totalProducts; // Products committed under the current root.
+        uint256 createdAt;     // Timestamp of the first registration.
+        uint256 updatedAt;     // Timestamp of the last (re)registration/supersede.
+        uint256 version;       // 1 on register; incremented on each supersede.
         bool exists;           // Sentinel so we can distinguish "empty" from "set".
     }
 
@@ -61,12 +64,23 @@ contract ProductRegistry is AccessControl, Pausable {
     /// @notice Ordered list of every registered batchId (handy for enumeration).
     string[] private batchIds;
 
-    /// @notice Emitted when a manufacturer registers a new batch root.
+    /// @notice Emitted when a manufacturer registers a new batch root (version 1).
     event BatchRegistered(
         string indexed batchId,
         bytes32 merkleRoot,
         uint256 totalProducts,
         uint256 createdAt
+    );
+
+    /// @notice Emitted when an existing batch's root is superseded (corrected).
+    /// @dev The full version history is reconstructable from these logs; the
+    ///      previous root is never overwritten silently.
+    event BatchSuperseded(
+        string indexed batchId,
+        bytes32 oldRoot,
+        bytes32 newRoot,
+        uint256 totalProducts,
+        uint256 version
     );
 
     /// @notice Emitted whenever a product is verified against a batch.
@@ -120,15 +134,46 @@ contract ProductRegistry is AccessControl, Pausable {
         require(!batches[batchId].exists, "ProductRegistry: batch already exists");
 
         batches[batchId] = Batch({
-            batchId: batchId,
             merkleRoot: merkleRoot,
             totalProducts: totalProducts,
             createdAt: block.timestamp,
+            updatedAt: block.timestamp,
+            version: 1,
             exists: true
         });
         batchIds.push(batchId);
 
         emit BatchRegistered(batchId, merkleRoot, totalProducts, block.timestamp);
+    }
+
+    /**
+     * @notice Supersede an existing batch's Merkle root with a corrected one,
+     *         preserving history (version increments; the change is logged).
+     * @dev Only REGISTRAR_ROLE, only when not paused. Reverts if the batch does
+     *      not exist or the new root is empty/unchanged. Verification always uses
+     *      the CURRENT (latest) root, so old products stop verifying once superseded.
+     * @param batchId       The existing batch to update.
+     * @param newMerkleRoot The corrected root (must differ from the current one).
+     * @param totalProducts Number of products under the new root.
+     */
+    function supersedeBatch(
+        string calldata batchId,
+        bytes32 newMerkleRoot,
+        uint256 totalProducts
+    ) external onlyRole(REGISTRAR_ROLE) whenNotPaused {
+        Batch storage b = batches[batchId];
+        require(b.exists, "ProductRegistry: unknown batch");
+        require(newMerkleRoot != bytes32(0), "ProductRegistry: empty merkleRoot");
+        require(totalProducts > 0, "ProductRegistry: totalProducts must be > 0");
+        require(newMerkleRoot != b.merkleRoot, "ProductRegistry: root unchanged");
+
+        bytes32 oldRoot = b.merkleRoot;
+        b.merkleRoot = newMerkleRoot;
+        b.totalProducts = totalProducts;
+        b.updatedAt = block.timestamp;
+        b.version += 1;
+
+        emit BatchSuperseded(batchId, oldRoot, newMerkleRoot, totalProducts, b.version);
     }
 
     /**
@@ -142,12 +187,15 @@ contract ProductRegistry is AccessControl, Pausable {
             string memory id,
             bytes32 merkleRoot,
             uint256 totalProducts,
-            uint256 createdAt
+            uint256 createdAt,
+            uint256 updatedAt,
+            uint256 version
         )
     {
         Batch storage b = batches[batchId];
         require(b.exists, "ProductRegistry: unknown batch");
-        return (b.batchId, b.merkleRoot, b.totalProducts, b.createdAt);
+        // `id` is echoed from the argument (no longer stored in the struct — 3.4).
+        return (batchId, b.merkleRoot, b.totalProducts, b.createdAt, b.updatedAt, b.version);
     }
 
     /**

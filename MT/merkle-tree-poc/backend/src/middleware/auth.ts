@@ -16,6 +16,7 @@
  */
 import { Request, Response, NextFunction } from "express";
 import { timingSafeEqual } from "crypto";
+import { logger } from "../logger";
 
 /** Parse allowed API keys from env at call time (test-friendly, not cached). */
 function allowedKeys(): string[] {
@@ -47,9 +48,8 @@ export function requireApiKey(
 
   if (keys.length === 0) {
     if (!warnedDevMode) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[auth] API_KEYS not set — mutating endpoints are UNPROTECTED (dev mode). " +
+      logger.warn(
+        "API_KEYS not set — mutating endpoints are UNPROTECTED (dev mode). " +
           "Set API_KEYS in the environment before deploying."
       );
       warnedDevMode = true;

@@ -178,4 +178,22 @@ describe("input validation (zod) + error handling", () => {
       .send({ batchId: BATCH });
     expect(res.status).toBe(400);
   });
+
+  it("returns 404 superseding an unknown batch (handler path intact)", async () => {
+    const res = await request(app)
+      .post("/batch/NO-SUCH-BATCH/supersede")
+      .send({
+        products: [
+          { serial: "SN-X-1", sku: "S", batch_id: "NO-SUCH-BATCH", manufactured_at: "2024-01-01T00:00:00.000Z" }
+        ]
+      });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects /supersede with empty products (400)", async () => {
+    const res = await request(app)
+      .post(`/batch/${BATCH}/supersede`)
+      .send({ products: [] });
+    expect(res.status).toBe(400);
+  });
 });

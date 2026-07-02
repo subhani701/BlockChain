@@ -323,6 +323,80 @@ contract("ProductRegistry", (accounts) => {
     );
   });
 
+  it("supersedes a batch: new root verifies, old products stop verifying, version bumps", async () => {
+    // Register v1.
+    await registry.registerBatch(BATCH_ID, root, COUNT, { from: manufacturer });
+    let info = await registry.getBatch(BATCH_ID);
+    assert.equal(info.version.toString(), "1");
+
+    // A genuine v1 product verifies.
+    const p = products[3];
+    const v1Leaf = hashProduct(p);
+    const v1Proof = tree.getHexProof(v1Leaf);
+    assert.equal(await registry.verifyProductView.call(BATCH_ID, v1Proof, v1Leaf), true);
+
+    // Build a corrected batch (different data → different root) and supersede.
+    const v2Products = makeBatch(BATCH_ID, COUNT).map((x) => ({
+      ...x,
+      sku: "SKF-CORRECTED"
+    }));
+    const v2Leaves = v2Products.map(hashProduct);
+    const v2Tree = buildTree(v2Leaves);
+    const v2Root = v2Tree.getHexRoot();
+
+    const receipt = await registry.supersedeBatch(BATCH_ID, v2Root, COUNT, {
+      from: manufacturer
+    });
+    const ev = receipt.logs.find((l) => l.event === "BatchSuperseded");
+    assert(ev, "BatchSuperseded not emitted");
+    assert.equal(ev.args.oldRoot, root);
+    assert.equal(ev.args.newRoot, v2Root);
+    assert.equal(ev.args.version.toString(), "2");
+
+    info = await registry.getBatch(BATCH_ID);
+    assert.equal(info.merkleRoot, v2Root);
+    assert.equal(info.version.toString(), "2");
+
+    // Old v1 product no longer verifies against the current (v2) root.
+    assert.equal(
+      await registry.verifyProductView.call(BATCH_ID, v1Proof, v1Leaf),
+      false,
+      "old product must stop verifying after supersede"
+    );
+    // A v2 product verifies.
+    const q = v2Products[3];
+    const v2Leaf = hashProduct(q);
+    const v2Proof = v2Tree.getHexProof(v2Leaf);
+    assert.equal(await registry.verifyProductView.call(BATCH_ID, v2Proof, v2Leaf), true);
+  });
+
+  it("supersede reverts for unknown batch, unchanged root, or non-registrar", async () => {
+    await registry.registerBatch(BATCH_ID, root, COUNT, { from: manufacturer });
+
+    // unknown batch
+    try {
+      await registry.supersedeBatch("NOPE", root, COUNT, { from: manufacturer });
+      assert.fail("should revert for unknown batch");
+    } catch (err) {
+      assert(/unknown batch/i.test(err.message), err.message);
+    }
+    // unchanged root
+    try {
+      await registry.supersedeBatch(BATCH_ID, root, COUNT, { from: manufacturer });
+      assert.fail("should revert for unchanged root");
+    } catch (err) {
+      assert(/root unchanged/i.test(err.message), err.message);
+    }
+    // non-registrar
+    const other = "0x" + "11".repeat(32);
+    try {
+      await registry.supersedeBatch(BATCH_ID, other, COUNT, { from: stranger });
+      assert.fail("non-registrar should not supersede");
+    } catch (err) {
+      assert(/revert|AccessControl|Unauthorized/i.test(err.message), err.message);
+    }
+  });
+
   it("reverts when verifying against an unknown batch", async () => {
     const leaf = hashProduct(products[0]);
     const proof = tree.getHexProof(leaf);

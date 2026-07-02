@@ -17,7 +17,7 @@ import {
   hashedProducts,
   treeLevels
 } from "../services/merkleService";
-import { registerBatchOnChain } from "../services/blockchain";
+import { registerBatchOnChain, supersedeBatchOnChain } from "../services/blockchain";
 import type { Batch } from "../../../shared/types";
 import {
   normalizeProducts,
@@ -28,7 +28,11 @@ import {
 import { requireApiKey } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { asyncHandler } from "../middleware/error";
-import { createBatchSchema, registerBatchSchema } from "../schemas";
+import {
+  createBatchSchema,
+  registerBatchSchema,
+  supersedeBatchSchema
+} from "../schemas";
 
 export const batchRouter = Router();
 
@@ -140,6 +144,54 @@ batchRouter.post("/register", requireApiKey, validateBody(registerBatchSchema), 
     });
   }
 }));
+
+/**
+ * POST /batch/:batchId/supersede  (batch versioning — Phase 3)
+ * Body: { products: Product[] }  — the CORRECTED product list.
+ * Rebuilds the tree from the new products, then supersedes the on-chain root.
+ */
+batchRouter.post(
+  "/:batchId/supersede",
+  requireApiKey,
+  validateBody(supersedeBatchSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { batchId } = req.params;
+    const existing = store.get(batchId);
+    if (!existing) {
+      return res.status(404).json({ error: `batch ${batchId} not found` });
+    }
+
+    // Validate + dedupe the corrected products (throws → central error handler).
+    const products = normalizeProducts(req.body.products);
+    const updated: Batch = { ...existing, products };
+    const merkleRoot = computeRoot(updated);
+    updated.merkleRoot = merkleRoot;
+
+    try {
+      const onChain = await supersedeBatchOnChain(
+        batchId,
+        merkleRoot,
+        products.length
+      );
+      updated.onChain = onChain;
+      store.upsert(updated);
+      return res.json({
+        batchId,
+        merkleRoot,
+        totalProducts: products.length,
+        version: onChain.version,
+        onChain
+      });
+    } catch (err) {
+      store.upsert(updated);
+      return res.status(502).json({
+        error: "failed to supersede root on-chain",
+        detail: (err as Error).message,
+        merkleRoot
+      });
+    }
+  })
+);
 
 /** GET /batch -> list of batch summaries. */
 batchRouter.get("/", (_req: Request, res: Response) => {

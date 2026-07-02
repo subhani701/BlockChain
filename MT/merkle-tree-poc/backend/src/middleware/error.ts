@@ -16,6 +16,7 @@ import {
   DuplicateProductError
 } from "../../../shared/validate";
 import { EmptyBatchError } from "../../../shared/merkle";
+import { logger } from "../logger";
 
 /** Wrap an async handler so rejections reach the error middleware. */
 export function asyncHandler(fn: RequestHandler): RequestHandler {
@@ -47,7 +48,6 @@ export function errorHandler(
   }
 
   // Unknown / unexpected error: log server-side, return a generic 500.
-  // eslint-disable-next-line no-console
-  console.error("[error]", err);
+  logger.error({ err }, "unhandled error");
   res.status(500).json({ error: "internal server error" });
 }

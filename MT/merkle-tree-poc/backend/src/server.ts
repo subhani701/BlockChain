@@ -7,16 +7,20 @@
  */
 import express, { Application, Request, Response } from "express";
 import cors from "cors";
+import pinoHttp from "pino-http";
 import { batchRouter } from "./routes/batch";
 import { proofRouter } from "./routes/proof";
 import { verifyRouter } from "./routes/verify";
 import { errorHandler } from "./middleware/error";
+import { logger } from "./logger";
 
 export function createApp(): Application {
   const app = express();
 
   app.use(cors());
   app.use(express.json({ limit: "5mb" }));
+  // Structured per-request logging (method, url, status, latency). Silent in tests.
+  app.use(pinoHttp({ logger }));
 
   // Simple liveness probe.
   app.get("/health", (_req: Request, res: Response) =>

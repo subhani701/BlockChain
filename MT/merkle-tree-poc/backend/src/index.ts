@@ -8,30 +8,30 @@
 import { createApp } from "./server";
 import { config } from "./config";
 import { chainStatus } from "./services/blockchain";
+import { logger } from "./logger";
 
 async function main(): Promise<void> {
   const app = createApp();
 
   app.listen(config.port, async () => {
-    // eslint-disable-next-line no-console
-    console.log(`[api] listening on http://localhost:${config.port}`);
+    logger.info(`listening on http://localhost:${config.port}`);
 
     const status = await chainStatus();
     if (status.connected) {
-      console.log(
-        `[api] blockchain OK — contract ${status.contractAddress} on ${status.rpcUrl}`
+      logger.info(
+        { contract: status.contractAddress, rpcUrl: status.rpcUrl },
+        "blockchain OK"
       );
     } else {
-      console.warn(
-        `[api] blockchain NOT connected (${status.error}). ` +
-          `Off-chain endpoints still work; deploy + run Ganache for on-chain.`
+      logger.warn(
+        { error: status.error },
+        "blockchain NOT connected — off-chain endpoints still work; deploy + run Ganache for on-chain"
       );
     }
   });
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error("[api] fatal:", err);
+  logger.fatal({ err }, "fatal startup error");
   process.exit(1);
 });
