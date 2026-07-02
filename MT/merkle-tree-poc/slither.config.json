@@ -1,0 +1,7 @@
+{
+  "//": "Slither config for ProductRegistry (Phase 5, Task 5.3). Excludes noise from audited OpenZeppelin deps; fail CI only on high-severity findings.",
+  "filter_paths": "node_modules",
+  "exclude_informational": true,
+  "exclude_low": true,
+  "solc_remaps": ["@openzeppelin=node_modules/@openzeppelin"]
+}

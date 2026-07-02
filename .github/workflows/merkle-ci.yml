@@ -1,0 +1,79 @@
+name: merkle-tree-poc CI
+
+# CI for the Merkle module (Phase 5). Runs contract + backend tests, frontend
+# build, and Slither static analysis on every push / PR touching the PoC.
+on:
+  push:
+    paths: ["MT/merkle-tree-poc/**", ".github/workflows/merkle-ci.yml"]
+  pull_request:
+    paths: ["MT/merkle-tree-poc/**", ".github/workflows/merkle-ci.yml"]
+
+defaults:
+  run:
+    working-directory: MT/merkle-tree-poc
+
+jobs:
+  test:
+    name: contracts + backend + frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm --prefix backend install
+          npm --prefix frontend install
+
+      - name: Start Ganache
+        run: |
+          npx ganache --port 7545 --wallet.seed voltus > ganache.log 2>&1 &
+          # Wait until the RPC responds.
+          for i in $(seq 1 30); do
+            if curl -s -X POST http://127.0.0.1:7545 \
+              -H 'content-type: application/json' \
+              -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | grep -q result; then
+              echo "ganache up"; break
+            fi
+            sleep 1
+          done
+
+      - name: Compile + migrate + contract tests
+        run: |
+          npx truffle compile
+          npx truffle migrate --network ganache --reset
+          npx truffle test --network ganache
+
+      - name: Backend tests
+        run: npm --prefix backend test
+
+      - name: Backend E2E (API <-> chain)
+        env:
+          RUN_E2E: "1"
+          GANACHE_RPC_URL: http://127.0.0.1:7545
+          LOG_LEVEL: silent
+          DATA_FILE: ./data/e2e-ci.json
+        run: npm --prefix backend exec -- vitest run test/e2e.test.ts
+
+      - name: Frontend build
+        run: npm --prefix frontend run build
+
+  slither:
+    name: Slither static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install deps (for OpenZeppelin imports)
+        run: npm install
+      - name: Run Slither
+        uses: crytic/slither-action@v0.4.0
+        with:
+          target: MT/merkle-tree-poc
+          slither-config: MT/merkle-tree-poc/slither.config.json
+          fail-on: high
