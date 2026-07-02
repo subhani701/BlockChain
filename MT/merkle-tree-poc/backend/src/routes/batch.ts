@@ -25,6 +25,10 @@ import {
   ProductValidationError,
   DuplicateProductError
 } from "../../../shared/validate";
+import { requireApiKey } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { asyncHandler } from "../middleware/error";
+import { createBatchSchema, registerBatchSchema } from "../schemas";
 
 export const batchRouter = Router();
 
@@ -33,7 +37,7 @@ export const batchRouter = Router();
  * Body: { batchId: string, count?: number }
  * Generates products and stores the batch (NOT yet on-chain).
  */
-batchRouter.post("/create", (req: Request, res: Response) => {
+batchRouter.post("/create", requireApiKey, validateBody(createBatchSchema), (req: Request, res: Response) => {
   const { batchId, count, products } = req.body ?? {};
   if (!batchId || typeof batchId !== "string") {
     return res.status(400).json({ error: "batchId (string) is required" });
@@ -98,7 +102,7 @@ batchRouter.post("/create", (req: Request, res: Response) => {
  * Body: { batchId: string }
  * Builds the Merkle tree, then writes the root to Ethereum via the contract.
  */
-batchRouter.post("/register", async (req: Request, res: Response) => {
+batchRouter.post("/register", requireApiKey, validateBody(registerBatchSchema), asyncHandler(async (req: Request, res: Response) => {
   const { batchId } = req.body ?? {};
   const batch = batchId ? store.get(batchId) : undefined;
   if (!batch) {
@@ -135,7 +139,7 @@ batchRouter.post("/register", async (req: Request, res: Response) => {
       merkleRoot
     });
   }
-});
+}));
 
 /** GET /batch -> list of batch summaries. */
 batchRouter.get("/", (_req: Request, res: Response) => {

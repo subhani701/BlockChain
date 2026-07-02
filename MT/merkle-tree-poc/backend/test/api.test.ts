@@ -150,3 +150,32 @@ describe("POST /verify/tamper", () => {
     expect(res.body.tampered.rejected).toBeTruthy();
   });
 });
+
+describe("input validation (zod) + error handling", () => {
+  it("rejects /batch/create with a non-numeric count (400 + issues)", async () => {
+    const res = await request(app)
+      .post("/batch/create")
+      .send({ batchId: "ZOD-1", count: "ten" });
+    expect(res.status).toBe(400);
+    expect(Array.isArray(res.body.issues)).toBe(true);
+  });
+
+  it("rejects /batch/register without batchId (400)", async () => {
+    const res = await request(app).post("/batch/register").send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 404 for /batch/register with an unknown batch (handler path intact)", async () => {
+    const res = await request(app)
+      .post("/batch/register")
+      .send({ batchId: "DEFINITELY-NOT-A-BATCH" });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects /verify/tamper without serial (400)", async () => {
+    const res = await request(app)
+      .post("/verify/tamper")
+      .send({ batchId: BATCH });
+    expect(res.status).toBe(400);
+  });
+});

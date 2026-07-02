@@ -58,7 +58,17 @@ export function encodeProductForDisplay(product: Product): string {
  * Returns a 0x-prefixed 32-byte hex string.
  */
 export function hashProduct(product: Product): string {
-  return keccak256(toUtf8Bytes(canonicalLeaf(product)));
+  // DOUBLE-HASH the leaf (OpenZeppelin-recommended, second-preimage safe):
+  //   inner = keccak256(utf8(canonicalJSON))   // 32 bytes
+  //   leaf  = keccak256(inner)
+  //
+  // WHY: an internal tree node is keccak256(concat(32B,32B)) — 32 bytes. A
+  // single-hashed leaf keccak256(data) is also 32 bytes, so a 64-byte node
+  // preimage could be reinterpreted as a "leaf", enabling a leaf/node-confusion
+  // (second-preimage) attack. Hashing the 32-byte inner hash again makes leaf
+  // and node preimages structurally distinct. This matches @openzeppelin/merkle-tree.
+  const inner = keccak256(toUtf8Bytes(canonicalLeaf(product)));
+  return keccak256(inner);
 }
 
 /** Raw keccak256 of an arbitrary UTF-8 string (handy for ad-hoc demos). */

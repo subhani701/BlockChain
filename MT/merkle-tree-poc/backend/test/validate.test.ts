@@ -176,10 +176,11 @@ describe("canonicalLeaf / hashProduct — determinism & golden vector", () => {
   });
 
   it("matches the GOLDEN leaf hash (locks the bytes — must never drift)", () => {
+    // LEAF SPEC 2.0.0: leaf = keccak256(keccak256(utf8(canonicalJSON))) (double-hash).
     // If this value changes, the leaf spec changed → bump LEAF_SPEC_VERSION and
     // coordinate with every producer + re-anchor roots on-chain.
     expect(hashProduct(VALID)).toBe(
-      "0x64944012c049ecb724ce3e49ab984a745680758d65f562db2517a3d9cdad5149"
+      "0x23375ae58672ed83b934bd5ec5631c0541bd0ac2bdb31a8d29cc5334f70787f4"
     );
   });
 
@@ -191,12 +192,12 @@ describe("canonicalLeaf / hashProduct — determinism & golden vector", () => {
     expect(c).toBe(a);
   });
 
-  it("is backward-compatible: generated batch leaves are unchanged", () => {
-    // generateBatch already emits canonical toISOString() dates, so normalization
-    // must be a no-op for generated products (existing roots stay valid).
+  it("generated batch leaves match the current leaf spec", () => {
+    // generateBatch emits canonical toISOString() dates, so a generated product
+    // and the hand-built VALID product hash identically under the current spec.
     const batch = generateBatch("BATCH-001", 4);
     expect(hashProduct(batch.products[0])).toBe(
-      "0x64944012c049ecb724ce3e49ab984a745680758d65f562db2517a3d9cdad5149"
+      "0x23375ae58672ed83b934bd5ec5631c0541bd0ac2bdb31a8d29cc5334f70787f4"
     );
   });
 });

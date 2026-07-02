@@ -24,8 +24,8 @@ const ProductRegistry = artifacts.require("ProductRegistry");
 const toBuf = (hex) => Buffer.from(hex.replace(/^0x/, ""), "hex");
 const toHex = (buf) => "0x" + buf.toString("hex");
 
-// leaf = keccak256(utf8(JSON.stringify({ serial, sku, batch_id, manufactured_at })))
-// — identical canonical serialization to shared/hash.ts (merkle.md §7-§10).
+// leaf = keccak256(keccak256(utf8(JSON.stringify({serial, sku, batch_id, manufactured_at}))))
+// DOUBLE-hashed, second-preimage safe — mirrors shared/hash.ts (LEAF SPEC 2.0.0).
 function hashProduct(p) {
   const canonical = JSON.stringify({
     serial: p.serial,
@@ -33,7 +33,8 @@ function hashProduct(p) {
     batch_id: p.batch_id,
     manufactured_at: p.manufactured_at
   });
-  return toHex(keccak256(Buffer.from(canonical, "utf8")));
+  const inner = keccak256(Buffer.from(canonical, "utf8")); // Buffer (32 bytes)
+  return toHex(keccak256(inner)); // keccak256 of the 32-byte inner hash
 }
 
 function buildTree(leaves) {
@@ -60,7 +61,7 @@ function makeBatch(batchId, count) {
 // --- Tests ------------------------------------------------------------------
 
 contract("ProductRegistry", (accounts) => {
-  const [manufacturer, stranger] = accounts;
+  const [manufacturer, stranger, registrar2] = accounts;
   const BATCH_ID = "BATCH-001";
   const COUNT = 100;
 
@@ -95,15 +96,100 @@ contract("ProductRegistry", (accounts) => {
     assert.equal(batch.id, BATCH_ID);
   });
 
-  it("prevents non-owners from registering a batch", async () => {
+  it("prevents accounts without REGISTRAR_ROLE from registering a batch", async () => {
     try {
       await registry.registerBatch(BATCH_ID, root, COUNT, { from: stranger });
       assert.fail("stranger should not be able to register a batch");
     } catch (err) {
+      // OZ v5 reverts with a custom error AccessControlUnauthorizedAccount.
       assert(
-        err.message.includes("revert"),
-        `expected revert, got: ${err.message}`
+        /revert|AccessControl|Unauthorized/i.test(err.message),
+        `expected access-control revert, got: ${err.message}`
       );
+    }
+  });
+
+  it("lets an admin grant and revoke REGISTRAR_ROLE", async () => {
+    const REGISTRAR_ROLE = await registry.REGISTRAR_ROLE();
+
+    // registrar2 has no role yet → cannot register.
+    assert.equal(await registry.hasRole(REGISTRAR_ROLE, registrar2), false);
+
+    // Admin (manufacturer) grants the role.
+    await registry.grantRole(REGISTRAR_ROLE, registrar2, { from: manufacturer });
+    assert.equal(await registry.hasRole(REGISTRAR_ROLE, registrar2), true);
+
+    // Now registrar2 can register a batch.
+    const receipt = await registry.registerBatch("BATCH-R2", root, COUNT, {
+      from: registrar2
+    });
+    assert(
+      receipt.logs.find((l) => l.event === "BatchRegistered"),
+      "granted registrar should be able to register"
+    );
+
+    // Admin revokes the role → registrar2 can no longer register.
+    await registry.revokeRole(REGISTRAR_ROLE, registrar2, { from: manufacturer });
+    assert.equal(await registry.hasRole(REGISTRAR_ROLE, registrar2), false);
+    try {
+      await registry.registerBatch("BATCH-R3", root, COUNT, { from: registrar2 });
+      assert.fail("revoked registrar should not be able to register");
+    } catch (err) {
+      assert(/revert|AccessControl|Unauthorized/i.test(err.message));
+    }
+  });
+
+  it("prevents a non-admin from granting roles", async () => {
+    const REGISTRAR_ROLE = await registry.REGISTRAR_ROLE();
+    try {
+      await registry.grantRole(REGISTRAR_ROLE, stranger, { from: stranger });
+      assert.fail("non-admin should not be able to grant roles");
+    } catch (err) {
+      assert(/revert|AccessControl|Unauthorized/i.test(err.message));
+    }
+  });
+
+  it("pauses and resumes batch registration (emergency stop)", async () => {
+    // Pause → registerBatch must revert.
+    await registry.pause({ from: manufacturer });
+    assert.equal(await registry.paused(), true);
+    try {
+      await registry.registerBatch(BATCH_ID, root, COUNT, { from: manufacturer });
+      assert.fail("registerBatch should revert while paused");
+    } catch (err) {
+      assert(/revert|EnforcedPause|paused/i.test(err.message), err.message);
+    }
+
+    // Unpause → registerBatch works again.
+    await registry.unpause({ from: manufacturer });
+    assert.equal(await registry.paused(), false);
+    const receipt = await registry.registerBatch(BATCH_ID, root, COUNT, {
+      from: manufacturer
+    });
+    assert(receipt.logs.find((l) => l.event === "BatchRegistered"));
+  });
+
+  it("keeps verification available while paused", async () => {
+    await registry.registerBatch(BATCH_ID, root, COUNT, { from: manufacturer });
+    await registry.pause({ from: manufacturer });
+
+    const target = products[7];
+    const leaf = hashProduct(target);
+    const proof = tree.getHexProof(leaf);
+    // Verification must still work during a pause (reading truth is not blocked).
+    assert.equal(
+      await registry.verifyProductView.call(BATCH_ID, proof, leaf),
+      true,
+      "verification should remain available while paused"
+    );
+  });
+
+  it("prevents a non-pauser from pausing", async () => {
+    try {
+      await registry.pause({ from: stranger });
+      assert.fail("non-pauser should not be able to pause");
+    } catch (err) {
+      assert(/revert|AccessControl|Unauthorized/i.test(err.message));
     }
   });
 

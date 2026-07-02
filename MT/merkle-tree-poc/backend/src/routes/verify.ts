@@ -21,6 +21,10 @@ import {
 import { chainStatus, verifyProductOnChain } from "../services/blockchain";
 import type { Product } from "../../../shared/types";
 import { ProductValidationError } from "../../../shared/validate";
+import { requireApiKey } from "../middleware/auth";
+import { validateBody } from "../middleware/validate";
+import { asyncHandler } from "../middleware/error";
+import { verifySchema, tamperSchema } from "../schemas";
 
 export const verifyRouter = Router();
 
@@ -33,7 +37,7 @@ export const verifyRouter = Router();
  * leaf belongs to the batch's committed Merkle root. Returns VALID / INVALID
  * plus the transaction details (gas used, tx hash).
  */
-verifyRouter.post("/", async (req: Request, res: Response) => {
+verifyRouter.post("/", requireApiKey, validateBody(verifySchema), asyncHandler(async (req: Request, res: Response) => {
   const { batchId, serial } = req.body ?? {};
   let { leaf, proof } = req.body ?? {};
 
@@ -84,14 +88,14 @@ verifyRouter.post("/", async (req: Request, res: Response) => {
       detail: (err as Error).message
     });
   }
-});
+}));
 
 /**
  * POST /verify/offchain
  * Same inputs as /verify but checks the proof locally (no blockchain). Handy
  * for instant UI feedback and for environments without Ganache.
  */
-verifyRouter.post("/offchain", (req: Request, res: Response) => {
+verifyRouter.post("/offchain", validateBody(verifySchema), (req: Request, res: Response) => {
   const { batchId, serial } = req.body ?? {};
   let { leaf, proof } = req.body ?? {};
 
@@ -136,7 +140,7 @@ verifyRouter.post("/offchain", (req: Request, res: Response) => {
  * proof. The result MUST be INVALID — demonstrating that any change avalanches
  * the hash and breaks the Merkle path.
  */
-verifyRouter.post("/tamper", async (req: Request, res: Response) => {
+verifyRouter.post("/tamper", requireApiKey, validateBody(tamperSchema), asyncHandler(async (req: Request, res: Response) => {
   const {
     batchId,
     serial,
@@ -253,7 +257,7 @@ verifyRouter.post("/tamper", async (req: Request, res: Response) => {
   }
 
   return res.json(response);
-});
+}));
 
 /** GET /chain/status -> blockchain connection + contract details (Part 7). */
 verifyRouter.get("/chain/status", async (_req: Request, res: Response) => {

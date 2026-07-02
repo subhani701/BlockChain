@@ -5,10 +5,16 @@ pragma solidity ^0.8.20;
 // It exposes `MerkleProof.verify(proof, root, leaf)` which recomputes the
 // root from a leaf + its sibling proof and compares it to the stored root.
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
-// Ownable restricts batch registration to the contract deployer (the
-// "manufacturer"). Anyone may still *verify* a product (verification is a
-// pure read and costs no gas when called off-chain).
-import "@openzeppelin/contracts/access/Ownable.sol";
+// AccessControl provides role-based authorization: a DEFAULT_ADMIN_ROLE that can
+// grant/revoke roles, and a REGISTRAR_ROLE that may register batches. This
+// replaces single-owner Ownable so multiple manufacturers can be authorized and
+// governance (a multisig / DAO admin) can manage them. Anyone may still *verify*
+// a product (verification is a pure read and costs no gas when called off-chain).
+import "@openzeppelin/contracts/access/AccessControl.sol";
+// Pausable provides an emergency circuit-breaker: a PAUSER_ROLE can halt new
+// batch registrations (e.g. if a registrar key is compromised). Verification is
+// intentionally NOT pausable — reading provenance truth must remain available.
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title  ProductRegistry
@@ -29,7 +35,14 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *         Cost: O(1) storage per batch regardless of batch size.
  *         Proof size: O(log2(n)) hashes per product.
  */
-contract ProductRegistry is Ownable {
+contract ProductRegistry is AccessControl, Pausable {
+    /// @notice Role allowed to register batches (the "manufacturer(s)").
+    /// @dev Admins (DEFAULT_ADMIN_ROLE) can grant/revoke this role.
+    bytes32 public constant REGISTRAR_ROLE = keccak256("REGISTRAR_ROLE");
+
+    /// @notice Role allowed to pause/unpause new batch registrations.
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+
     /**
      * @dev On-chain record for one manufacturing batch.
      *      Note we store the MERKLE ROOT, not the products themselves.
@@ -65,14 +78,32 @@ contract ProductRegistry is Ownable {
     );
 
     /**
-     * @param initialOwner The manufacturer address allowed to register batches.
-     *        Passed in by the migration script (we use the deployer account).
+     * @param admin The initial admin, granted DEFAULT_ADMIN_ROLE (can grant/revoke
+     *        roles) and REGISTRAR_ROLE (can register batches). Passed in by the
+     *        migration script (the deployer account). In production this should be
+     *        a multisig / DAO executor address.
      */
-    constructor(address initialOwner) Ownable(initialOwner) {}
+    constructor(address admin) {
+        require(admin != address(0), "ProductRegistry: admin is the zero address");
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(REGISTRAR_ROLE, admin);
+        _grantRole(PAUSER_ROLE, admin);
+    }
+
+    /// @notice Halt new batch registrations (emergency stop). Verification is
+    ///         unaffected. Only PAUSER_ROLE.
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    /// @notice Resume batch registrations. Only PAUSER_ROLE.
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
 
     /**
      * @notice Register a batch by committing its Merkle Root on-chain.
-     * @dev Only the owner (manufacturer) may call this. Reverts if the batch
+     * @dev Only accounts with REGISTRAR_ROLE may call this. Reverts if the batch
      *      already exists or inputs are empty.
      * @param batchId       Unique human-readable id, e.g. "BATCH-001".
      * @param merkleRoot    Root computed off-chain from all product leaves.
@@ -82,7 +113,7 @@ contract ProductRegistry is Ownable {
         string calldata batchId,
         bytes32 merkleRoot,
         uint256 totalProducts
-    ) external onlyOwner {
+    ) external onlyRole(REGISTRAR_ROLE) whenNotPaused {
         require(bytes(batchId).length > 0, "ProductRegistry: empty batchId");
         require(merkleRoot != bytes32(0), "ProductRegistry: empty merkleRoot");
         require(totalProducts > 0, "ProductRegistry: totalProducts must be > 0");

@@ -17,7 +17,8 @@
     "ethers": "^6.13.4",
     "express": "^4.19.2",
     "keccak256": "^1.0.6",
-    "merkletreejs": "^0.4.0"
+    "merkletreejs": "^0.4.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

@@ -28,10 +28,10 @@ export function HashFlow({ product, encoded, leaf }: Props) {
         <div className="mono">{encoded}</div>
       </div>
 
-      <div className="flow-arrow">↓ keccak256</div>
+      <div className="flow-arrow">↓ keccak256 × 2 (double-hash)</div>
 
       <div className="flow-step">
-        <div className="flow-label">3 · Leaf Hash (32 bytes)</div>
+        <div className="flow-label">3 · Leaf Hash (32 bytes, double-hashed)</div>
         <div className="hash">{leaf}</div>
       </div>
     </div>

@@ -10,6 +10,7 @@ import cors from "cors";
 import { batchRouter } from "./routes/batch";
 import { proofRouter } from "./routes/proof";
 import { verifyRouter } from "./routes/verify";
+import { errorHandler } from "./middleware/error";
 
 export function createApp(): Application {
   const app = express();
@@ -31,6 +32,9 @@ export function createApp(): Application {
   app.use((_req: Request, res: Response) =>
     res.status(404).json({ error: "not found" })
   );
+
+  // Central error handler — MUST be registered last.
+  app.use(errorHandler);
 
   return app;
 }

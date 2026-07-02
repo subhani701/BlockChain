@@ -10,6 +10,15 @@ const BASE =
   (import.meta.env.VITE_API_BASE as string | undefined) ||
   "http://localhost:4000";
 
+// Optional API key for protected (mutating / gas-spending) endpoints. When the
+// backend has API_KEYS set, these calls must send a matching Bearer token.
+const API_KEY = import.meta.env.VITE_API_KEY as string | undefined;
+
+/** Authorization header for protected endpoints (empty in dev when no key set). */
+function authHeaders(): Record<string, string> {
+  return API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {};
+}
+
 // ---- Types mirrored from shared/types.ts -----------------------------------
 
 export interface Product {
@@ -109,8 +118,9 @@ export interface ChainStatus {
 
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init
+    ...init,
+    // Merge headers (spreading ...init above must not clobber Content-Type).
+    headers: { "Content-Type": "application/json", ...(init?.headers || {}) }
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -130,12 +140,14 @@ export const api = {
   createBatch: (batchId: string, count: number) =>
     http<CreateBatchResponse>("/batch/create", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ batchId, count })
     }),
 
   registerBatch: (batchId: string) =>
     http<RegisterResponse>("/batch/register", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ batchId })
     }),
 
@@ -171,6 +183,7 @@ export const api = {
   verifyOnChain: (batchId: string, serial: string) =>
     http<VerifyResponse>("/verify", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ batchId, serial })
     }),
 
@@ -189,6 +202,7 @@ export const api = {
   ) =>
     http<TamperResponse>("/verify/tamper", {
       method: "POST",
+      headers: authHeaders(),
       body: JSON.stringify({ batchId, serial, field, newValue, onChain })
     })
 };

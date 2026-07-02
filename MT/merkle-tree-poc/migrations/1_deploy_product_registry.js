@@ -26,7 +26,9 @@ const ProductRegistry = artifacts.require("ProductRegistry");
 module.exports = async function (deployer, network, accounts) {
   const manufacturer = accounts[0];
 
-  // Deploy the contract, passing the manufacturer address to the constructor.
+  // Deploy the contract, passing the admin address to the constructor. The
+  // admin is granted DEFAULT_ADMIN_ROLE + REGISTRAR_ROLE. In production this
+  // should be a multisig / DAO executor address.
   await deployer.deploy(ProductRegistry, manufacturer);
 
   const instance = await ProductRegistry.deployed();
@@ -34,8 +36,8 @@ module.exports = async function (deployer, network, accounts) {
   // Helpful deployment log so you can copy the address into the backend .env.
   console.log("------------------------------------------------------------");
   console.log("ProductRegistry deployed");
-  console.log("  network         :", network);
-  console.log("  contract address:", instance.address);
-  console.log("  manufacturer    :", manufacturer);
+  console.log("  network          :", network);
+  console.log("  contract address :", instance.address);
+  console.log("  admin + registrar:", manufacturer);
   console.log("------------------------------------------------------------");
 };

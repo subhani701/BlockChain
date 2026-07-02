@@ -245,7 +245,8 @@ serialization** (aligned to the VoltusWave / SKF model and `merkle.md`):
 ```ts
 // shared/hash.ts — fixed key order: serial, sku, batch_id, manufactured_at
 const canonical = JSON.stringify({ serial, sku, batch_id, manufactured_at });
-const leaf = keccak256(toUtf8Bytes(canonical));   // 0x… 32-byte hash
+// DOUBLE-hash (second-preimage safe; matches @openzeppelin/merkle-tree):
+const leaf = keccak256(keccak256(toUtf8Bytes(canonical)));   // 0x… 32-byte hash
 ```
 
 **Why this matters:** the contract recomputes the root from a leaf you supply.
@@ -254,7 +255,9 @@ verification always fails. So the serialization must be **canonical** — same
 keys, same order, same whitespace — on every side (backend, tests, on-chain
 prover). The contract itself never reconstructs the leaf from fields; it only
 runs the sorted-pair climb (OpenZeppelin `MerkleProof`) over the 32-byte leaf,
-so a `keccak256`-of-JSON leaf is exactly what it expects.
+so a double-`keccak256` leaf is exactly what it expects. The double hash makes
+a leaf preimage structurally distinct from an internal-node preimage
+(`keccak256(concat(node,node))`), closing the leaf/node second-preimage attack.
 
 ### What is a Merkle Tree?
 
