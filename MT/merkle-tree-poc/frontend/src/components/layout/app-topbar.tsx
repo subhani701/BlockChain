@@ -11,6 +11,7 @@ import {
   SheetTrigger
 } from "@/components/ui/sheet";
 import { ModeToggle } from "@/components/mode-toggle";
+import { SettingsSheet } from "@/components/settings-sheet";
 import { ChainStatusBadge } from "@/components/chain-status-badge";
 import { NavLinks } from "./nav-links";
 import { Brand } from "./brand";
@@ -56,6 +57,7 @@ export function AppTopbar({ chain }: { chain: ChainStatus | null }) {
       <div className="ml-auto flex items-center gap-2">
         <ChainStatusBadge chain={chain} />
         <Separator orientation="vertical" className="h-6" />
+        <SettingsSheet />
         <ModeToggle />
       </div>
     </header>

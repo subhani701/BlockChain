@@ -12,11 +12,29 @@ const BASE =
 
 // Optional API key for protected (mutating / gas-spending) endpoints. When the
 // backend has API_KEYS set, these calls must send a matching Bearer token.
-const API_KEY = import.meta.env.VITE_API_KEY as string | undefined;
+// Resolution order: a runtime key saved in the browser (Settings) → VITE_API_KEY.
+const API_KEY_STORAGE = "voltus-api-key";
+
+/** Current API key (runtime override from localStorage, else the build-time env). */
+export function getApiKey(): string {
+  if (typeof localStorage !== "undefined") {
+    const saved = localStorage.getItem(API_KEY_STORAGE);
+    if (saved) return saved;
+  }
+  return (import.meta.env.VITE_API_KEY as string | undefined) ?? "";
+}
+
+/** Persist (or clear) the runtime API key. */
+export function setApiKey(key: string): void {
+  if (typeof localStorage === "undefined") return;
+  if (key) localStorage.setItem(API_KEY_STORAGE, key);
+  else localStorage.removeItem(API_KEY_STORAGE);
+}
 
 /** Authorization header for protected endpoints (empty in dev when no key set). */
 function authHeaders(): Record<string, string> {
-  return API_KEY ? { Authorization: `Bearer ${API_KEY}` } : {};
+  const key = getApiKey();
+  return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
 // ---- Types mirrored from shared/types.ts -----------------------------------
