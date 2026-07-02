@@ -18,7 +18,12 @@ import {
   treeLevels,
   allProofs
 } from "../services/merkleService";
-import { registerBatchOnChain, supersedeBatchOnChain } from "../services/blockchain";
+import {
+  registerBatchOnChain,
+  supersedeBatchOnChain,
+  chainStatus
+} from "../services/blockchain";
+import { LEAF_SPEC_VERSION } from "../../../shared/validate";
 import type { Batch } from "../../../shared/types";
 import {
   normalizeProducts,
@@ -238,6 +243,44 @@ batchRouter.get("/:batchId/proofs", (req: Request, res: Response) => {
     proofs
   });
 });
+
+/**
+ * GET /batch/:batchId/proof-pack  (Proof Data Availability)
+ * A SELF-CONTAINED, durable export: the root + contract + leaf-spec + every
+ * product's fields, leaf, and proof. Download it (or pin it to IPFS / embed a
+ * per-product slice in the QR) so products remain verifiable against the
+ * on-chain root even if this backend and its store are lost.
+ */
+batchRouter.get(
+  "/:batchId/proof-pack",
+  asyncHandler(async (req: Request, res: Response) => {
+    const batch = store.get(req.params.batchId);
+    if (!batch) {
+      return res.status(404).json({ error: "batch not found" });
+    }
+    const proofs = allProofs(batch);
+    const byId = new Map(batch.products.map((p) => [p.serial, p]));
+    const chain = await chainStatus().catch(() => null);
+
+    return res.json({
+      format: "voltus-merkle-proof-pack",
+      version: "1",
+      leafSpec: LEAF_SPEC_VERSION,
+      batchId: batch.batchId,
+      merkleRoot: computeRoot(batch),
+      contract: chain?.contractAddress ?? null,
+      onChain: batch.onChain ?? null,
+      generatedAt: new Date().toISOString(),
+      count: proofs.length,
+      proofs: proofs.map((pr) => ({
+        serial: pr.serial,
+        product: byId.get(pr.serial),
+        leaf: pr.leaf,
+        proof: pr.proof
+      }))
+    });
+  })
+);
 
 /** GET /batch/:batchId/tree -> all Merkle levels (leaves..root). */
 batchRouter.get("/:batchId/tree", (req: Request, res: Response) => {

@@ -13,6 +13,7 @@ import request from "supertest";
 import { createApp } from "../src/server";
 import { store } from "../src/services/store";
 import { verifyProof } from "../../shared/merkle";
+import { hashProduct } from "../../shared/hash";
 
 const app = createApp();
 const BATCH = "BATCH-TEST";
@@ -112,7 +113,7 @@ describe("GET /batch/:batchId/proofs (bulk, cached)", () => {
 });
 
 describe("GET /proof/:serial", () => {
-  it("returns a leaf, proof and steps for a product", async () => {
+  it("returns a self-contained bundle (leaf, proof, steps, leafSpec)", async () => {
     const res = await request(app)
       .get("/proof/SN-BATCH-TEST-0003")
       .query({ batchId: BATCH });
@@ -121,6 +122,29 @@ describe("GET /proof/:serial", () => {
     expect(res.body.leaf).toMatch(/^0x[0-9a-f]{64}$/);
     expect(Array.isArray(res.body.proof)).toBe(true);
     expect(res.body.steps[0]).toHaveProperty("position");
+    expect(res.body.leafSpec).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+describe("GET /batch/:batchId/proof-pack (data availability)", () => {
+  it("returns a self-contained pack every entry of which verifies OFFLINE", async () => {
+    const res = await request(app).get(`/batch/${BATCH}/proof-pack`);
+    expect(res.status).toBe(200);
+    expect(res.body.format).toBe("voltus-merkle-proof-pack");
+    expect(res.body.leafSpec).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(res.body.count).toBe(16);
+    expect(res.body.merkleRoot).toMatch(/^0x[0-9a-f]{64}$/);
+    // Using ONLY the pack (no backend/tree): leaf reproduces from product fields
+    // and the proof reconstructs the root — i.e. verifiable if the backend is gone.
+    for (const e of res.body.proofs) {
+      expect(hashProduct(e.product)).toBe(e.leaf);
+      expect(verifyProof(e.leaf, e.proof, res.body.merkleRoot)).toBe(true);
+    }
+  });
+
+  it("404s for an unknown batch", async () => {
+    const res = await request(app).get("/batch/NOPE/proof-pack");
+    expect(res.status).toBe(404);
   });
 });
 

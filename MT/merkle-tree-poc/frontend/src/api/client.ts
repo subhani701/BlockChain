@@ -181,6 +181,26 @@ export const api = {
 
   getTree: (batchId: string) => http<TreeResponse>(`/batch/${batchId}/tree`),
 
+  /** Self-contained, offline-verifiable proof pack (data availability export). */
+  getProofPack: (batchId: string) =>
+    http<{
+      format: string;
+      version: string;
+      leafSpec: string;
+      batchId: string;
+      merkleRoot: string;
+      contract: string | null;
+      onChain: OnChainInfo | null;
+      generatedAt: string;
+      count: number;
+      proofs: {
+        serial: string;
+        product: Product;
+        leaf: string;
+        proof: string[];
+      }[];
+    }>(`/batch/${encodeURIComponent(batchId)}/proof-pack`),
+
   listBatches: () =>
     http<
       Array<{

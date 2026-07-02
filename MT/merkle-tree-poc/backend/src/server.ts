@@ -12,6 +12,7 @@ import { batchRouter } from "./routes/batch";
 import { proofRouter } from "./routes/proof";
 import { verifyRouter } from "./routes/verify";
 import { errorHandler } from "./middleware/error";
+import { apiRateLimiter } from "./middleware/rate-limit";
 import { logger } from "./logger";
 
 export function createApp(): Application {
@@ -21,6 +22,8 @@ export function createApp(): Application {
   app.use(express.json({ limit: "5mb" }));
   // Structured per-request logging (method, url, status, latency). Silent in tests.
   app.use(pinoHttp({ logger }));
+  // Per-IP rate limiting (DoS protection). No-op in tests.
+  app.use(apiRateLimiter);
 
   // Simple liveness probe.
   app.get("/health", (_req: Request, res: Response) =>

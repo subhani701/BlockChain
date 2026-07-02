@@ -5,7 +5,8 @@ export default defineConfig({
     // Use an isolated data file so tests never touch real batch data.
     env: {
       DATA_FILE: "./data/test-batches.json",
-      LOG_LEVEL: "silent"
+      LOG_LEVEL: "silent",
+      RATE_LIMIT_DISABLED: "1"
     },
     include: ["test/**/*.test.ts"],
     environment: "node",

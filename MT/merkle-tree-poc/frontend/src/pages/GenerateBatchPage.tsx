@@ -11,7 +11,8 @@ import {
   Search,
   PackagePlus,
   FileJson,
-  ShieldAlert
+  ShieldAlert,
+  Download
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -118,6 +119,22 @@ export function GenerateBatchPage() {
     }
   }
 
+  async function onExportPack() {
+    const pack = await run("pack", () => api.getProofPack(batchId.trim()));
+    if (pack) {
+      const blob = new Blob([JSON.stringify(pack, null, 2)], {
+        type: "application/json"
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${pack.batchId}-proof-pack.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${pack.count} proofs (leaf spec ${pack.leafSpec})`);
+    }
+  }
+
   const filteredProducts = useMemo(() => {
     if (!batch) return [];
     const q = search.trim().toLowerCase();
@@ -209,14 +226,26 @@ export function GenerateBatchPage() {
                     Each product → canonical JSON → keccak256 leaf.
                   </CardDescription>
                 </div>
-                <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search serial or SKU…"
-                    className="pl-8"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
+                <div className="flex items-center gap-2">
+                  <div className="relative w-full sm:w-56">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search serial or SKU…"
+                      className="pl-8"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onExportPack}
+                    disabled={busy !== null}
+                    title="Download a self-contained, offline-verifiable proof pack"
+                  >
+                    {busy === "pack" ? <Spinner /> : <Download />}
+                    Export proofs
+                  </Button>
                 </div>
               </div>
             </CardHeader>
