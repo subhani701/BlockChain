@@ -1,3 +1,7 @@
+/* Legacy PoC styles for pages not yet migrated to shadcn/ui. Wrapped in the
+   low-priority `legacy` cascade layer (declared first in globals.css) so the
+   new Tailwind/shadcn UI always wins and these never bleed into new components. */
+@layer legacy {
 :root {
   --bg: #0f172a;
   --panel: #1e293b;
@@ -353,3 +357,4 @@ tbody tr:hover {
   padding-left: 0.8rem;
   margin: 0.6rem 0;
 }
+} /* end @layer legacy */

@@ -1,10 +1,14 @@
 /**
- * App — top-level layout, navigation tabs, blockchain status pill, and the
- * shared outlet context (active batch + chain status) used by all pages.
+ * App — application shell: sidebar + topbar + footer + routed content.
+ * Holds cross-page state (active batch + chain status) and provides it to pages
+ * via the router Outlet context (AppCtx), preserving the existing pages' API.
  */
 import { useEffect, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
-import { api, type ChainStatus } from "./api/client";
+import { Outlet } from "react-router-dom";
+import { AppSidebar } from "@/components/layout/app-sidebar";
+import { AppTopbar } from "@/components/layout/app-topbar";
+import { AppFooter } from "@/components/layout/app-footer";
+import { api, type ChainStatus } from "@/api/client";
 
 export interface AppCtx {
   activeBatch: string;
@@ -18,61 +22,48 @@ export function App() {
   );
   const [chain, setChain] = useState<ChainStatus | null>(null);
 
-  // Persist the active batch so pages stay in sync across navigation.
   useEffect(() => {
     if (activeBatch) localStorage.setItem("activeBatch", activeBatch);
   }, [activeBatch]);
 
-  // Poll the chain status once on load.
+  // Poll chain status so the topbar badge stays fresh.
   useEffect(() => {
-    api
-      .chainStatus()
-      .then(setChain)
-      .catch(() =>
-        setChain({ connected: false, rpcUrl: "?", error: "backend unreachable" })
-      );
+    let alive = true;
+    const load = () =>
+      api
+        .chainStatus()
+        .then((c) => alive && setChain(c))
+        .catch(
+          () =>
+            alive &&
+            setChain({
+              connected: false,
+              rpcUrl: "?",
+              error: "backend unreachable"
+            })
+        );
+    load();
+    const id = setInterval(load, 15000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
   }, []);
 
   const ctx: AppCtx = { activeBatch, setActiveBatch, chain };
 
   return (
-    <div className="app">
-      <header className="topbar">
-        <h1>🌳 Merkle Tree Product Verification</h1>
-        <span
-          className={`chain-pill ${
-            chain?.connected ? "ok" : chain ? "down" : ""
-          }`}
-        >
-          {chain?.connected
-            ? `⛓ on-chain · ${chain.contractAddress?.slice(0, 8)}…`
-            : "⛓ blockchain offline"}
-        </span>
-      </header>
-
-      <nav className="tabs">
-        <NavLink to="/" end>
-          1 · Batch &amp; Tree
-        </NavLink>
-        <NavLink to="/proof">2 · Proof</NavLink>
-        <NavLink to="/verify">3 · Verify &amp; Tamper</NavLink>
-        <NavLink to="/learn">Learn</NavLink>
-      </nav>
-
-      <div className="spacer" />
-
-      {activeBatch && (
-        <div className="notice" style={{ marginBottom: "1rem" }}>
-          Active batch: <strong>{activeBatch}</strong>
-        </div>
-      )}
-
-      <Outlet context={ctx} />
-
-      <footer className="muted" style={{ marginTop: "2rem", fontSize: "0.8rem" }}>
-        Truffle + Ganache · Ethers.js · merkletreejs · OpenZeppelin MerkleProof —
-        standalone PoC.
-      </footer>
+    <div className="flex min-h-screen bg-background">
+      <AppSidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <AppTopbar chain={chain} />
+        <main className="flex-1">
+          <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">
+            <Outlet context={ctx} />
+          </div>
+        </main>
+        <AppFooter />
+      </div>
     </div>
   );
 }

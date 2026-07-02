@@ -1,14 +1,19 @@
 /**
- * frontend/src/main.tsx — React entry point + router.
+ * frontend/src/main.tsx — React entry point + router + providers.
  */
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { App } from "./App";
+import { DashboardPage } from "./pages/DashboardPage";
 import { GenerateBatchPage } from "./pages/GenerateBatchPage";
 import { ProofPage } from "./pages/ProofPage";
 import { VerifyPage } from "./pages/VerifyPage";
 import { LearnPage } from "./pages/LearnPage";
+import { ThemeProvider } from "@/components/theme-provider";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
+import "./styles/globals.css";
 import "./styles/app.css";
 
 const router = createBrowserRouter([
@@ -16,7 +21,8 @@ const router = createBrowserRouter([
     path: "/",
     element: <App />,
     children: [
-      { index: true, element: <GenerateBatchPage /> },
+      { index: true, element: <DashboardPage /> },
+      { path: "generate", element: <GenerateBatchPage /> },
       { path: "proof", element: <ProofPage /> },
       { path: "verify", element: <VerifyPage /> },
       { path: "learn", element: <LearnPage /> }
@@ -26,6 +32,11 @@ const router = createBrowserRouter([
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <RouterProvider router={router} />
+    <ThemeProvider>
+      <TooltipProvider delayDuration={200}>
+        <RouterProvider router={router} />
+        <Toaster richColors position="top-right" />
+      </TooltipProvider>
+    </ThemeProvider>
   </React.StrictMode>
 );
