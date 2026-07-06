@@ -32,7 +32,9 @@ export const logger = pino({
           options: {
             colorize: true,
             translateTime: "SYS:yyyy-mm-dd HH:MM:ss",
-            ignore: "pid,hostname,service",
+            // Hide noisy/structural fields in dev — the custom request message
+            // already carries method/url/status/latency in a readable form.
+            ignore: "pid,hostname,service,req,res,responseTime,reqId,context",
             messageFormat: "{msg}",
             singleLine: true
           }

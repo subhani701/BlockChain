@@ -20,8 +20,24 @@ export function createApp(): Application {
 
   app.use(cors());
   app.use(express.json({ limit: "5mb" }));
-  // Structured per-request logging (method, url, status, latency). Silent in tests.
-  app.use(pinoHttp({ logger }));
+  // Per-request logging. Human-readable one-liners in dev
+  // ("POST /batch/create → 201 (21ms)"); compact structured JSON in prod.
+  app.use(
+    pinoHttp({
+      logger,
+      customSuccessMessage: (req, res, responseTime) =>
+        `${req.method} ${req.url} → ${res.statusCode} (${responseTime}ms)`,
+      customErrorMessage: (req, res, err) =>
+        `${req.method} ${req.url} → ${res.statusCode} FAILED: ${
+          err?.message ?? "error"
+        }`,
+      // Trim the logged object to the essentials (no header dumps).
+      serializers: {
+        req: (req) => ({ method: req.method, url: req.url }),
+        res: (res) => ({ statusCode: res.statusCode })
+      }
+    })
+  );
   // Per-IP rate limiting (DoS protection). No-op in tests.
   app.use(apiRateLimiter);
 
