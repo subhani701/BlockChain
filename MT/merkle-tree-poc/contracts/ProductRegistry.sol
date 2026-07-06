@@ -44,6 +44,21 @@ contract ProductRegistry is AccessControl, Pausable {
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
     /**
+     * @notice Lifecycle state of a batch (the on-chain half of `batch_active`).
+     * @dev Active   — normal, in circulation (the default on registration).
+     *      Recalled — pulled from market (e.g. safety recall) but still known.
+     *      Revoked  — permanently invalidated (e.g. mint error / fraud).
+     *      Verification of MEMBERSHIP is unchanged by status — a product either is
+     *      or isn't in the tree. Status is a SEPARATE lifecycle signal the app layer
+     *      reads to decide whether a genuine product should currently be honoured.
+     */
+    enum BatchStatus {
+        Active,
+        Recalled,
+        Revoked
+    }
+
+    /**
      * @dev On-chain record for one manufacturing batch.
      *      Note we store the MERKLE ROOT, not the products themselves.
      */
@@ -55,6 +70,7 @@ contract ProductRegistry is AccessControl, Pausable {
         uint256 createdAt;     // Timestamp of the first registration.
         uint256 updatedAt;     // Timestamp of the last (re)registration/supersede.
         uint256 version;       // 1 on register; incremented on each supersede.
+        BatchStatus status;    // Lifecycle state (Active by default = enum value 0).
         bool exists;           // Sentinel so we can distinguish "empty" from "set".
     }
 
@@ -65,8 +81,13 @@ contract ProductRegistry is AccessControl, Pausable {
     string[] private batchIds;
 
     /// @notice Emitted when a manufacturer registers a new batch root (version 1).
+    /// @dev `batchId` is indexed (filterable) but a dynamic `string` topic stores
+    ///      only keccak256(batchId) — you can filter by a known id but cannot
+    ///      recover it from the log. So we ALSO emit `batchIdValue` (non-indexed)
+    ///      as the recoverable plaintext for off-chain dashboards/indexers.
     event BatchRegistered(
         string indexed batchId,
+        string batchIdValue,
         bytes32 merkleRoot,
         uint256 totalProducts,
         uint256 createdAt
@@ -77,10 +98,19 @@ contract ProductRegistry is AccessControl, Pausable {
     ///      previous root is never overwritten silently.
     event BatchSuperseded(
         string indexed batchId,
+        string batchIdValue,
         bytes32 oldRoot,
         bytes32 newRoot,
         uint256 totalProducts,
         uint256 version
+    );
+
+    /// @notice Emitted when a batch's lifecycle status changes.
+    event BatchStatusChanged(
+        string indexed batchId,
+        string batchIdValue,
+        BatchStatus oldStatus,
+        BatchStatus newStatus
     );
 
     /// @notice Emitted whenever a product is verified against a batch.
@@ -139,11 +169,12 @@ contract ProductRegistry is AccessControl, Pausable {
             createdAt: block.timestamp,
             updatedAt: block.timestamp,
             version: 1,
+            status: BatchStatus.Active,
             exists: true
         });
         batchIds.push(batchId);
 
-        emit BatchRegistered(batchId, merkleRoot, totalProducts, block.timestamp);
+        emit BatchRegistered(batchId, batchId, merkleRoot, totalProducts, block.timestamp);
     }
 
     /**
@@ -173,7 +204,48 @@ contract ProductRegistry is AccessControl, Pausable {
         b.updatedAt = block.timestamp;
         b.version += 1;
 
-        emit BatchSuperseded(batchId, oldRoot, newMerkleRoot, totalProducts, b.version);
+        emit BatchSuperseded(batchId, batchId, oldRoot, newMerkleRoot, totalProducts, b.version);
+    }
+
+    /**
+     * @notice Set a batch's lifecycle status (e.g. mark it Recalled or Revoked).
+     * @dev Only REGISTRAR_ROLE. Does NOT touch the Merkle root — membership proofs
+     *      are unaffected. The app layer reads {getBatchStatus} for the
+     *      `batch_active` check and decides how to treat a genuine-but-recalled item.
+     *      Reverts if the batch is unknown or the status is unchanged.
+     * @param batchId   The batch to update.
+     * @param newStatus The new lifecycle status.
+     */
+    function setBatchStatus(string calldata batchId, BatchStatus newStatus)
+        external
+        onlyRole(REGISTRAR_ROLE)
+    {
+        Batch storage b = batches[batchId];
+        require(b.exists, "ProductRegistry: unknown batch");
+        BatchStatus oldStatus = b.status;
+        require(oldStatus != newStatus, "ProductRegistry: status unchanged");
+
+        b.status = newStatus;
+        b.updatedAt = block.timestamp;
+
+        emit BatchStatusChanged(batchId, batchId, oldStatus, newStatus);
+    }
+
+    /**
+     * @notice Read a batch's current lifecycle status (Active / Recalled / Revoked).
+     * @dev Free view. Kept SEPARATE from verifyProductView so membership
+     *      verification and lifecycle status stay decoupled (and the existing
+     *      verify/getBatch ABIs are unchanged).
+     * @return status The batch's current status.
+     */
+    function getBatchStatus(string calldata batchId)
+        external
+        view
+        returns (BatchStatus status)
+    {
+        Batch storage b = batches[batchId];
+        require(b.exists, "ProductRegistry: unknown batch");
+        return b.status;
     }
 
     /**

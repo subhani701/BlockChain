@@ -94,6 +94,69 @@ contract("ProductRegistry", (accounts) => {
     assert.equal(batch.merkleRoot, root);
     assert.equal(batch.totalProducts.toString(), String(COUNT));
     assert.equal(batch.id, BATCH_ID);
+
+    // Plain (recoverable) batchId is emitted alongside the indexed topic.
+    assert.equal(ev.args.batchIdValue, BATCH_ID, "plain batchId missing in event");
+  });
+
+  it("defaults new batches to Active status (enum 0)", async () => {
+    await registry.registerBatch(BATCH_ID, root, COUNT, { from: manufacturer });
+    const status = await registry.getBatchStatus(BATCH_ID);
+    assert.equal(status.toString(), "0", "new batch should be Active (0)");
+  });
+
+  it("lets a registrar recall/revoke a batch WITHOUT breaking membership proofs", async () => {
+    await registry.registerBatch(BATCH_ID, root, COUNT, { from: manufacturer });
+    const leaf = hashProduct(products[7]);
+    const proof = tree.getHexProof(leaf);
+
+    // Genuine product verifies while Active.
+    assert.equal(await registry.verifyProductView.call(BATCH_ID, proof, leaf), true);
+
+    // Recall the batch (Active=0 -> Recalled=1).
+    const receipt = await registry.setBatchStatus(BATCH_ID, 1, { from: manufacturer });
+    const ev = receipt.logs.find((l) => l.event === "BatchStatusChanged");
+    assert(ev, "BatchStatusChanged not emitted");
+    assert.equal(ev.args.batchIdValue, BATCH_ID);
+    assert.equal(ev.args.oldStatus.toString(), "0");
+    assert.equal(ev.args.newStatus.toString(), "1");
+
+    // Status persisted...
+    assert.equal((await registry.getBatchStatus(BATCH_ID)).toString(), "1");
+    // ...but MEMBERSHIP verification is deliberately unaffected (still true).
+    assert.equal(await registry.verifyProductView.call(BATCH_ID, proof, leaf), true);
+
+    // Can move on to Revoked=2.
+    await registry.setBatchStatus(BATCH_ID, 2, { from: manufacturer });
+    assert.equal((await registry.getBatchStatus(BATCH_ID)).toString(), "2");
+  });
+
+  it("setBatchStatus reverts for unknown batch, unchanged status, or non-registrar", async () => {
+    await registry.registerBatch(BATCH_ID, root, COUNT, { from: manufacturer });
+
+    // Unknown batch.
+    try {
+      await registry.setBatchStatus("NOPE", 1, { from: manufacturer });
+      assert.fail("should revert for unknown batch");
+    } catch (err) {
+      assert(/unknown batch/i.test(err.message), err.message);
+    }
+
+    // Unchanged status (already Active=0).
+    try {
+      await registry.setBatchStatus(BATCH_ID, 0, { from: manufacturer });
+      assert.fail("should revert when status unchanged");
+    } catch (err) {
+      assert(/status unchanged/i.test(err.message), err.message);
+    }
+
+    // Non-registrar.
+    try {
+      await registry.setBatchStatus(BATCH_ID, 1, { from: stranger });
+      assert.fail("non-registrar should not set status");
+    } catch (err) {
+      assert(/revert|AccessControl|Unauthorized/i.test(err.message), err.message);
+    }
   });
 
   it("prevents accounts without REGISTRAR_ROLE from registering a batch", async () => {
