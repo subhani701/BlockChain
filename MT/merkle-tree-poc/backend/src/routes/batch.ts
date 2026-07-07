@@ -119,6 +119,18 @@ batchRouter.post("/register", requireApiKey, validateBody(registerBatchSchema), 
     return res.status(404).json({ error: `batch ${batchId} not found` });
   }
 
+  // Already anchored? Reject cleanly BEFORE attempting a duplicate on-chain tx
+  // (the contract would revert with "batch already exists", but ethers surfaces
+  // that as a cryptic "missing revert data" during gas estimation). A 409 here
+  // gives a clear message and avoids a wasted transaction.
+  if (batch.onChain) {
+    return res.status(409).json({
+      error: `batch ${batchId} is already registered on-chain`,
+      merkleRoot: batch.merkleRoot ?? null,
+      onChain: batch.onChain
+    });
+  }
+
   // 1) Build the tree off-chain and derive the root.
   const merkleRoot = computeRoot(batch);
   batch.merkleRoot = merkleRoot;

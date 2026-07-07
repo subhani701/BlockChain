@@ -12,7 +12,8 @@ import {
   PackagePlus,
   FileJson,
   ShieldAlert,
-  Download
+  Download,
+  CircleCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -363,11 +364,19 @@ export function GenerateBatchPage() {
             <CardContent className="space-y-4">
               <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
                 <DialogTrigger asChild>
-                  <Button disabled={busy !== null}>
-                    {busy === "register" ? <Spinner /> : <Anchor />}
+                  <Button disabled={busy !== null || registered !== null}>
+                    {busy === "register" ? (
+                      <Spinner />
+                    ) : registered ? (
+                      <CircleCheck />
+                    ) : (
+                      <Anchor />
+                    )}
                     {busy === "register"
                       ? "Sending transaction…"
-                      : "Register Root On-Chain"}
+                      : registered
+                        ? "Registered ✓"
+                        : "Register Root On-Chain"}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
