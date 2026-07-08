@@ -382,7 +382,22 @@ export function VerifyPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
             <div className="space-y-2 sm:w-48">
               <Label>Field to tamper</Label>
-              <Select value={field} onValueChange={setField}>
+              <Select
+                value={field}
+                onValueChange={(f) => {
+                  setField(f);
+                  // Auto-fill a sensible (valid-but-wrong) value for the chosen
+                  // field, so tampering always produces a clean INVALID — e.g.
+                  // manufactured_at needs a real date, not "SN-COUNTERFEIT-0001".
+                  setNewValue(
+                    f === "sku"
+                      ? "FAKE-SKU-9999"
+                      : f === "manufactured_at"
+                        ? "2020-01-01T00:00:00.000Z"
+                        : "SN-COUNTERFEIT-0001"
+                  );
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>

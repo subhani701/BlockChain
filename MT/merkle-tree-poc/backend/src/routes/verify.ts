@@ -45,6 +45,8 @@ verifyRouter.post("/", requireApiKey, validateBody(verifySchema), asyncHandler(a
     return res.status(400).json({ error: "batchId is required" });
   }
 
+  let merkleRoot: string | undefined;
+
   // If a serial is given, derive leaf+proof from the stored batch.
   if (serial) {
     const batch = store.get(batchId);
@@ -60,6 +62,7 @@ verifyRouter.post("/", requireApiKey, validateBody(verifySchema), asyncHandler(a
     const built = buildProof(batch, product);
     leaf = built.leaf;
     proof = built.proof;
+    merkleRoot = built.merkleRoot;
   }
 
   if (!leaf || !Array.isArray(proof)) {
@@ -76,6 +79,7 @@ verifyRouter.post("/", requireApiKey, validateBody(verifySchema), asyncHandler(a
       proof,
       result: result.valid ? "VALID" : "INVALID",
       valid: result.valid,
+      merkleRoot,
       onChain: {
         txHash: result.txHash,
         blockNumber: result.blockNumber,
