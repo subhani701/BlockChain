@@ -13,8 +13,10 @@ import {
   FileJson,
   ShieldAlert,
   Download,
-  CircleCheck
+  CircleCheck,
+  Printer
 } from "lucide-react";
+import QRCode from "qrcode";
 import { toast } from "sonner";
 import {
   api,
@@ -117,6 +119,100 @@ export function GenerateBatchPage() {
     if (res) {
       setRegistered(res);
       toast.success(`Root anchored on-chain (block ${res.onChain.blockNumber})`);
+    }
+  }
+
+  /**
+   * Print one QR label PER PRODUCT — what batch minting actually needs.
+   * Every part gets its own QR (its own leaf + its own proof), all committing to
+   * the one batch root. Opens a printable sheet (Cmd/Ctrl+P → PDF → label printer).
+   */
+  async function onPrintLabels() {
+    // Open the window synchronously or popup blockers kill it.
+    const win = window.open("", "_blank");
+    if (!win) {
+      toast.error("Popup blocked — allow popups to print QR labels.");
+      return;
+    }
+    win.document.write("<p style='font:14px sans-serif'>Generating labels…</p>");
+
+    setBusy("labels");
+    try {
+      const pack = await api.getProofPack(batchId.trim());
+      if (pack.count > 500) {
+        win.close();
+        toast.error(
+          `${pack.count} labels is too many to render in the browser. Generate them server-side for batches this size.`
+        );
+        return;
+      }
+      if (pack.count > 100) {
+        toast.message(`Rendering ${pack.count} labels — this may take a moment…`);
+      }
+
+      const labels = await Promise.all(
+        pack.proofs.map(async (p) => {
+          // Each label carries THAT product's own compact bundle: only the
+          // product + proof (the verifier recomputes the leaf and reads the root
+          // from the chain — see lib/bundle.ts).
+          const bundle = {
+            v: 1,
+            leafSpec: pack.leafSpec,
+            batchId: pack.batchId,
+            product: p.product,
+            proof: p.proof
+          };
+          // Render at high resolution (CSS scales it down in the label). Small
+          // widths put QR modules on sub-pixel boundaries and scanners fail.
+          const dataUrl = await QRCode.toDataURL(JSON.stringify(bundle), {
+            margin: 1,
+            width: 512,
+            errorCorrectionLevel: "M"
+          });
+          return { serial: p.serial, sku: p.product.sku, dataUrl };
+        })
+      );
+
+      const cards = labels
+        .map(
+          (l) => `<div class="label">
+            <img src="${l.dataUrl}" alt="${l.serial}" />
+            <div class="serial">${l.serial}</div>
+            <div class="sku">${l.sku}</div>
+          </div>`
+        )
+        .join("");
+
+      win.document.open();
+      win.document.write(`<!doctype html><html><head><meta charset="utf-8" />
+        <title>${pack.batchId} — QR labels (${pack.count})</title>
+        <style>
+          body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 16px; }
+          header { margin-bottom: 12px; }
+          h1 { font-size: 16px; margin: 0 0 4px; }
+          .meta { font-size: 11px; color: #555; font-family: ui-monospace, monospace; word-break: break-all; }
+          .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+          .label { border: 1px solid #ddd; border-radius: 6px; padding: 8px; text-align: center; break-inside: avoid; }
+          .label img { width: 100%; height: auto; }
+          .serial { font: 600 10px ui-monospace, monospace; margin-top: 4px; word-break: break-all; }
+          .sku { font-size: 9px; color: #666; }
+          @media print { header { display: none } .label { border-color: #999 } }
+        </style></head><body>
+        <header>
+          <h1>${pack.batchId} — ${pack.count} product labels</h1>
+          <div class="meta">batch root ${pack.merkleRoot} · leaf spec ${pack.leafSpec} · registry ${pack.contract ?? "n/a"}</div>
+          <p style="font-size:12px">Each QR carries that product's own proof. Press Ctrl/Cmd+P to print.</p>
+        </header>
+        <div class="grid">${cards}</div>
+        </body></html>`);
+      win.document.close();
+      win.focus();
+      toast.success(`Generated ${pack.count} QR labels`);
+    } catch (e) {
+      win.close();
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -246,6 +342,16 @@ export function GenerateBatchPage() {
                   >
                     {busy === "pack" ? <Spinner /> : <Download />}
                     Export proofs
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onPrintLabels}
+                    disabled={busy !== null}
+                    title="Generate one QR label per product (each carries its own proof)"
+                  >
+                    {busy === "labels" ? <Spinner /> : <Printer />}
+                    Print QR labels
                   </Button>
                 </div>
               </div>
