@@ -42,3 +42,27 @@ export const tamperSchema = z.object({
   newValue: z.string().optional(),
   onChain: z.boolean().optional()
 });
+
+/**
+ * POST /verify/scan — the integration seam with scanServiceRequest().
+ * Either supply the scanned `bundle` (field path), or `batchId` + `serial` and we
+ * derive the product + proof from the stored batch (operator path).
+ * `location` / `scannerId` are optional scan context used for replay detection.
+ */
+export const scanSchema = z
+  .object({
+    bundle: z
+      .object({
+        batchId: z.string().min(1),
+        product: z.record(z.string(), z.unknown()),
+        proof: z.array(z.string())
+      })
+      .optional(),
+    batchId: z.string().min(1).optional(),
+    serial: z.string().min(1).optional(),
+    location: z.string().min(1).max(200).optional(),
+    scannerId: z.string().min(1).max(200).optional()
+  })
+  .refine((v) => !!v.bundle || (!!v.batchId && !!v.serial), {
+    message: "provide either `bundle`, or both `batchId` and `serial`"
+  });

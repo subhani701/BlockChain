@@ -21,12 +21,112 @@ import {
 import { chainStatus, verifyProductOnChain } from "../services/blockchain";
 import type { Product } from "../../../shared/types";
 import { ProductValidationError } from "../../../shared/validate";
+import { verifyScan, verifyAuthenticity } from "../services/scanVerify";
 import { requireApiKey } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { asyncHandler } from "../middleware/error";
-import { verifySchema, tamperSchema } from "../schemas";
+import { verifySchema, tamperSchema, scanSchema } from "../schemas";
 
 export const verifyRouter = Router();
+
+/**
+ * POST /verify/authenticity — THE single verification the UI uses.
+ *
+ * Body: { batchId, serial }  (derive product + proof from the stored batch)
+ *   or: { batchId, product, proof }  (verify a supplied bundle)
+ *
+ * Recomputes the leaf, climbs the proof, and compares to the batch root READ FROM
+ * THE CHAIN via a free `view` read — NO gas, NO transaction. Returns a 3-state
+ * verdict (AUTHENTIC / COUNTERFEIT / CANNOT_VERIFY) with named checks. Read-only,
+ * so it needs no API key and writes nothing.
+ */
+verifyRouter.post(
+  "/authenticity",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { batchId, serial, product, proof } = req.body ?? {};
+    if (!batchId) return res.status(400).json({ error: "batchId is required" });
+
+    let p = product as Product | undefined;
+    let pr = proof as string[] | undefined;
+
+    if (!p || !Array.isArray(pr)) {
+      if (!serial) {
+        return res
+          .status(400)
+          .json({ error: "provide serial, or both product and proof[]" });
+      }
+      const batch = store.get(batchId);
+      if (!batch) {
+        return res.status(404).json({ error: `batch ${batchId} not found` });
+      }
+      const found = findProduct(batch, serial);
+      if (!found) {
+        return res
+          .status(404)
+          .json({ error: `product ${serial} not in batch ${batchId}` });
+      }
+      const built = buildProof(batch, found);
+      p = found;
+      pr = built.proof;
+    }
+
+    const verdict = await verifyAuthenticity(batchId, p, pr);
+    return res.json(verdict);
+  })
+);
+
+/**
+ * POST /verify/scan  — THE INTEGRATION SEAM for VoltusWave's scanServiceRequest().
+ *
+ * Body: { bundle: {batchId, product, proof} }   (the scanned QR — field path)
+ *   or: { batchId, serial }                     (derive from the stored batch)
+ *   plus optional { location, scannerId } for replay (cloned-QR) detection.
+ *
+ * Returns project.md-shaped output: the checks THIS module can answer as NAMED
+ * booleans with their weights, a weighted score, an attribution list, the checks
+ * we cannot answer (for the app to fill in), plus warnings.
+ *
+ * The batch root is always read FROM THE CHAIN — never from the scanned bundle.
+ *
+ * PROTECTED: this endpoint APPENDS to the scan ledger. Left open, an attacker
+ * could poison the replay signal (spam a serial from many "locations" so that
+ * genuine scans then fail qr_not_replayed). Field scanners must be authenticated.
+ */
+verifyRouter.post(
+  "/scan",
+  requireApiKey,
+  validateBody(scanSchema),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { bundle, batchId, serial, location, scannerId } = req.body ?? {};
+
+    let input;
+    if (bundle) {
+      input = {
+        batchId: bundle.batchId,
+        product: bundle.product as Product,
+        proof: bundle.proof as string[],
+        location,
+        scannerId
+      };
+    } else {
+      const batch = store.get(batchId);
+      if (!batch) {
+        return res.status(404).json({ error: `batch ${batchId} not found` });
+      }
+      const product = findProduct(batch, serial);
+      if (!product) {
+        return res
+          .status(404)
+          .json({ error: `product ${serial} not in batch ${batchId}` });
+      }
+      const built = buildProof(batch, product);
+      input = { batchId, product, proof: built.proof, location, scannerId };
+    }
+
+    const verdict = await verifyScan(input);
+    return res.json(verdict);
+  })
+);
 
 /**
  * POST /verify

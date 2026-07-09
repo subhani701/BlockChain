@@ -6,7 +6,8 @@ export default defineConfig({
     env: {
       DATA_FILE: "./data/test-batches.json",
       LOG_LEVEL: "silent",
-      RATE_LIMIT_DISABLED: "1"
+      RATE_LIMIT_DISABLED: "1",
+      SCAN_LEDGER_FILE: "./data/test-scans.json"
     },
     include: ["test/**/*.test.ts"],
     environment: "node",

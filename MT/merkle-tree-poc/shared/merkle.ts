@@ -128,6 +128,15 @@ export function getLevels(leaves: string[]): MerkleLevel[] {
 }
 
 /**
+ * Climb a proof from a leaf and return the root it reconstructs.
+ * Replays OZ's sorted-pair fold (identical to the on-chain MerkleProof).
+ * Returns the leaf itself for an empty proof (single-leaf tree).
+ */
+export function computeRootFromProof(leaf: string, proof: string[]): string {
+  return proof.reduce((acc, sibling) => nodeHash(acc, sibling), leaf);
+}
+
+/**
  * Verify a proof off-chain — replays OZ's sorted-pair climb (identical to the
  * on-chain MerkleProof.verify). Works for ANY leaf/proof/root (e.g. a tampered
  * leaf), independent of the tree instance.
@@ -137,8 +146,9 @@ export function verifyProof(
   proof: string[],
   root: string
 ): boolean {
-  const computed = proof.reduce((acc, sibling) => nodeHash(acc, sibling), leaf);
-  return computed.toLowerCase() === root.toLowerCase();
+  return (
+    computeRootFromProof(leaf, proof).toLowerCase() === root.toLowerCase()
+  );
 }
 
 /** Generate a multiproof (proof + flags) for several leaves — OZ multiProofVerify. */

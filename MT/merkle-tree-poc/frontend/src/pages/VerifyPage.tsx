@@ -8,8 +8,7 @@ import {
   FlaskConical,
   CircleCheck,
   CircleX,
-  Fuel,
-  Blocks,
+  ShieldAlert,
   ArrowRight,
   Package,
   Clock
@@ -18,25 +17,23 @@ import { toast } from "sonner";
 import {
   api,
   type HashedProduct,
-  type VerifyResponse,
-  type TamperResponse
+  type AuthenticityResponse
 } from "@/api/client";
 import type { AppCtx } from "@/App";
 import { PageHeader } from "@/components/page-header";
 import { HashDisplay } from "@/components/hash-display";
 import { DetailRow } from "@/components/detail-row";
-import { CopyButton } from "@/components/copy-button";
 import { Spinner } from "@/components/spinner";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger
-} from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  VerifyTrace,
+  revealSteps,
+  type Step
+} from "@/components/verify-trace";
 import {
   Select,
   SelectContent,
@@ -51,44 +48,41 @@ import {
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger
-} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-/** Big VALID / INVALID banner. */
-function Verdict({
-  valid,
-  label,
-  sublabel
-}: {
-  valid: boolean;
-  label: string;
-  sublabel?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-3 rounded-lg border p-4",
-        valid
-          ? "border-success/40 bg-success/10 text-success"
-          : "border-destructive/40 bg-destructive/10 text-destructive"
-      )}
-    >
-      {valid ? (
-        <CircleCheck className="h-8 w-8" />
-      ) : (
-        <CircleX className="h-8 w-8" />
-      )}
-      <div>
-        <div className="text-xl font-bold tracking-tight">{label}</div>
-        {sublabel && <div className="text-sm opacity-90">{sublabel}</div>}
-      </div>
-    </div>
-  );
+/** Turn an authenticity result into the ordered steps the check actually ran. */
+function buildSteps(res: AuthenticityResponse): Step[] {
+  const anchored = res.checks.root_anchored_on_chain.passed;
+  const matches = res.checks.merkle_proof_valid.passed;
+  const unreachable = res.result === "CANNOT_VERIFY";
+  return [
+    {
+      label: "1 · Recompute leaf from the product fields",
+      value: res.computed.leaf,
+      status: "done"
+    },
+    {
+      label: "2 · Climb the proof → reconstruct a root",
+      value: res.computed.root,
+      status: "done"
+    },
+    {
+      label: "3 · Read the batch root from the blockchain",
+      value: unreachable
+        ? "chain unreachable"
+        : anchored
+          ? res.onChain!.merkleRoot
+          : "batch not registered on-chain",
+      status: unreachable ? "warn" : anchored ? "done" : "fail"
+    },
+    {
+      label: "4 · Recomputed root  ==  on-chain root ?",
+      value: unreachable ? "skipped" : matches ? "MATCH" : "MISMATCH",
+      status: unreachable ? "skip" : matches ? "done" : "fail"
+    }
+  ];
 }
+
 
 export function VerifyPage() {
   const { activeBatch, chain } = useOutletContext<AppCtx>();
@@ -97,12 +91,19 @@ export function VerifyPage() {
   const [products, setProducts] = useState<HashedProduct[]>([]);
   const [serial, setSerial] = useState("");
 
-  const [verify, setVerify] = useState<VerifyResponse | null>(null);
+  const [verify, setVerify] = useState<AuthenticityResponse | null>(null);
   const [verifiedProduct, setVerifiedProduct] = useState<HashedProduct | null>(
     null
   );
   const [verifiedAt, setVerifiedAt] = useState<string | null>(null);
-  const [tamper, setTamper] = useState<TamperResponse | null>(null);
+  const [tamperInfo, setTamperInfo] = useState<{
+    field: string;
+    originalValue: string;
+    newValue: string;
+    originalLeaf: string;
+    tamperedLeaf: string;
+  } | null>(null);
+  const [steps, setSteps] = useState<Step[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
 
   const [field, setField] = useState("serial");
@@ -124,19 +125,38 @@ export function VerifyPage() {
       });
   }, [batchId]);
 
-  async function onVerify(onChain: boolean) {
-    setBusy(onChain ? "chain" : "off");
-    setTamper(null);
+  /** Reveal the verification steps one at a time, then show the verdict. */
+  async function revealAndSet(
+    res: AuthenticityResponse,
+    product: HashedProduct | null,
+    tinfo: typeof tamperInfo
+  ) {
+    await revealSteps(buildSteps(res), setSteps);
+    setVerify(res);
+    setVerifiedProduct(product);
+    setVerifiedAt(new Date().toLocaleString());
+    setTamperInfo(tinfo);
+    const t =
+      res.result === "AUTHENTIC"
+        ? "success"
+        : res.result === "COUNTERFEIT"
+          ? "error"
+          : "warning";
+    toast[t](res.result.replace("_", " "));
+  }
+
+  function reset() {
+    setVerify(null);
+    setSteps([]);
+    setTamperInfo(null);
+  }
+
+  async function onVerify() {
+    setBusy("verify");
+    reset();
     try {
-      const res = onChain
-        ? await api.verifyOnChain(batchId, serial)
-        : await api.verifyOffChain(batchId, serial);
-      setVerify(res);
-      setVerifiedProduct(products.find((p) => p.serial === serial) ?? null);
-      setVerifiedAt(new Date().toLocaleString());
-      toast[res.valid ? "success" : "error"](
-        `${res.result}${onChain ? " (on-chain)" : " (off-chain)"}`
-      );
+      const res = await api.verifyAuthenticity(batchId, serial);
+      await revealAndSet(res, products.find((p) => p.serial === serial) ?? null, null);
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -144,14 +164,35 @@ export function VerifyPage() {
     }
   }
 
+  /**
+   * Tamper demo: take the GENUINE product's proof, change one field, and run the
+   * SAME on-chain verification. The tampered leaf climbs the original proof to a
+   * wrong root → COUNTERFEIT. Shows the identical trace as a normal verify.
+   */
   async function onTamper() {
     setBusy("tamper");
-    setVerify(null);
+    reset();
     try {
-      const res = await api.tamper(batchId, serial, field, newValue, chainUp);
-      setTamper(res);
-      toast[res.offchainResult === "VALID" ? "success" : "error"](
-        `Tampered product: ${res.offchainResult}`
+      const genuine = await api.getProof(serial, batchId); // real product + proof
+      const originalValue = String(
+        (genuine.product as unknown as Record<string, unknown>)[field] ?? ""
+      );
+      const tampered = { ...genuine.product, [field]: newValue };
+      const res = await api.verifyAuthenticityBundle(
+        batchId,
+        tampered,
+        genuine.proof
+      );
+      await revealAndSet(
+        res,
+        { ...(products.find((p) => p.serial === serial) as HashedProduct), ...tampered },
+        {
+          field,
+          originalValue,
+          newValue,
+          originalLeaf: genuine.leaf,
+          tamperedLeaf: res.computed.leaf
+        }
       );
     } catch (e) {
       toast.error((e as Error).message);
@@ -159,8 +200,6 @@ export function VerifyPage() {
       setBusy(null);
     }
   }
-
-  const fieldVal = (p: Record<string, unknown>) => String(p[field] ?? "");
 
   return (
     <div className="space-y-6">
@@ -212,56 +251,69 @@ export function VerifyPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {/* span wrapper so tooltip works while button is disabled */}
-                <span>
-                  <Button
-                    onClick={() => onVerify(true)}
-                    disabled={busy !== null || !chainUp || !serial}
-                  >
-                    {busy === "chain" ? <Spinner /> : <ShieldCheck />}
-                    {busy === "chain"
-                      ? "Verifying on-chain…"
-                      : "Verify on Smart Contract"}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              {!chainUp && (
-                <TooltipContent>
-                  Blockchain not connected — start Ganache + migrate.
-                </TooltipContent>
-              )}
-            </Tooltip>
-            <Button
-              variant="secondary"
-              onClick={() => onVerify(false)}
-              disabled={busy !== null || !serial}
-            >
-              {busy === "off" ? <Spinner /> : <ShieldCheck />}
-              {busy === "off" ? "Verifying…" : "Verify Off-chain"}
-            </Button>
-          </div>
-          {!chainUp && (
-            <p className="text-xs text-muted-foreground">
-              On-chain verify is disabled while the chain is offline — the
-              off-chain check still works.
-            </p>
-          )}
+          <Button onClick={onVerify} disabled={busy !== null || !serial}>
+            {busy === "verify" ? <Spinner /> : <ShieldCheck />}
+            {busy === "verify" ? "Verifying…" : "Verify"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Recomputes the leaf, climbs the proof, and compares it to the batch
+            root read from the blockchain — gas-free (a read, no transaction).
+            {!chainUp &&
+              " The chain appears offline, so this will report CANNOT VERIFY."}
+          </p>
         </CardContent>
       </Card>
+
+      {/* Live verification trace — the steps the check actually runs */}
+      <VerifyTrace steps={steps} />
 
       {verify && (
         <Card>
           <CardContent className="space-y-4 pt-6">
-            <Verdict
-              valid={verify.valid}
-              label={verify.result}
-              sublabel={
-                verify.onChain ? "verified on-chain" : "verified off-chain"
-              }
-            />
+            {/* 3-state verdict, compared against the ON-CHAIN root */}
+            <div
+              className={cn(
+                "flex items-start gap-3 rounded-lg border p-4",
+                verify.result === "AUTHENTIC"
+                  ? "border-success/40 bg-success/10 text-success"
+                  : verify.result === "COUNTERFEIT"
+                    ? "border-destructive/40 bg-destructive/10 text-destructive"
+                    : "border-warning/40 bg-warning/10 text-warning"
+              )}
+            >
+              {verify.result === "AUTHENTIC" ? (
+                <CircleCheck className="mt-0.5 h-8 w-8 shrink-0" />
+              ) : verify.result === "COUNTERFEIT" ? (
+                <CircleX className="mt-0.5 h-8 w-8 shrink-0" />
+              ) : (
+                <ShieldAlert className="mt-0.5 h-8 w-8 shrink-0" />
+              )}
+              <div>
+                <div className="text-xl font-bold tracking-tight">
+                  {verify.result.replace("_", " ")}
+                </div>
+                <div className="text-sm opacity-90">
+                  proof recomputed locally and compared to the batch root on the
+                  blockchain
+                </div>
+              </div>
+            </div>
+
+            {/* Warnings (e.g. genuine but recalled batch) */}
+            {verify.warnings.map((w, i) => (
+              <Alert key={i} variant="warning">
+                <AlertDescription>{w}</AlertDescription>
+              </Alert>
+            ))}
+
+            {/* The named on-chain checks (project.md's crypto trio) */}
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(verify.checks).map(([name, c]) => (
+                <Badge key={name} variant={c.passed ? "success" : "destructive"}>
+                  {name} {c.passed ? "✓" : "✗"}
+                </Badge>
+              ))}
+            </div>
 
             {/* Product details */}
             {verifiedProduct && (
@@ -285,37 +337,25 @@ export function VerifyPage() {
               </div>
             )}
 
-            {/* Verification details */}
+            {/* What we computed vs. what the chain says */}
             <div className="divide-y">
-              <DetailRow label="Leaf">
-                <HashDisplay value={verify.leaf} />
+              <DetailRow label="Leaf (recomputed)">
+                <HashDisplay value={verify.computed.leaf} />
               </DetailRow>
-              <DetailRow label="Proof siblings">
-                {verify.proof.length}
+              <DetailRow label="Root (recomputed from proof)">
+                <HashDisplay value={verify.computed.root} />
               </DetailRow>
-              {verify.merkleRoot && (
-                <DetailRow label="Merkle Root">
-                  <HashDisplay value={verify.merkleRoot} />
-                </DetailRow>
-              )}
+              <DetailRow label="Root ON-CHAIN (authoritative)">
+                {verify.onChain ? (
+                  <HashDisplay value={verify.onChain.merkleRoot} />
+                ) : (
+                  <span className="text-muted-foreground">unavailable</span>
+                )}
+              </DetailRow>
               {verify.onChain && (
-                <>
-                  <DetailRow label="Tx Hash">
-                    <HashDisplay value={verify.onChain.txHash} />
-                  </DetailRow>
-                  <DetailRow label="Block">
-                    <span className="inline-flex items-center gap-1">
-                      <Blocks className="h-3.5 w-3.5 text-muted-foreground" />
-                      {verify.onChain.blockNumber}
-                    </span>
-                  </DetailRow>
-                  <DetailRow label="Gas Used">
-                    <span className="inline-flex items-center gap-1">
-                      <Fuel className="h-3.5 w-3.5 text-muted-foreground" />
-                      {verify.onChain.gasUsed.toLocaleString()}
-                    </span>
-                  </DetailRow>
-                </>
+                <DetailRow label="Batch version (on-chain)">
+                  {verify.onChain.version}
+                </DetailRow>
               )}
               {verifiedAt && (
                 <DetailRow label="Verified at">
@@ -326,42 +366,6 @@ export function VerifyPage() {
                 </DetailRow>
               )}
             </div>
-
-            {/* Full Merkle proof (sibling hashes) */}
-            {verify.proof.length > 0 && (
-              <Accordion type="single" collapsible>
-                <AccordionItem value="proof" className="border-b-0">
-                  <AccordionTrigger className="py-2">
-                    View Merkle proof ({verify.proof.length} sibling
-                    {verify.proof.length === 1 ? "" : "s"})
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-xs">
-                        Sibling hashes (leaf → root)
-                      </span>
-                      <CopyButton
-                        value={JSON.stringify(verify.proof)}
-                        label="Proof copied"
-                      />
-                    </div>
-                    <ol className="space-y-1">
-                      {verify.proof.map((h, i) => (
-                        <li
-                          key={i}
-                          className="flex items-center gap-2 text-xs"
-                        >
-                          <span className="w-5 shrink-0 text-right text-muted-foreground">
-                            {i + 1}
-                          </span>
-                          <HashDisplay value={h} lead={12} tail={10} />
-                        </li>
-                      ))}
-                    </ol>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            )}
           </CardContent>
         </Card>
       )}
@@ -430,34 +434,24 @@ export function VerifyPage() {
         </CardContent>
       </Card>
 
-      {tamper && (
+      {/* What was tampered — shown alongside the shared trace + verdict above. */}
+      {tamperInfo && (
         <Card>
-          <CardContent className="space-y-4 pt-6">
-            <Verdict
-              valid={tamper.offchainResult === "VALID"}
-              label={tamper.offchainResult}
-              sublabel={
-                tamper.onchainResult
-                  ? `on-chain: ${tamper.onchainResult}`
-                  : "off-chain check"
-              }
-            />
-
+          <CardContent className="space-y-3 pt-6">
+            <div className="text-sm font-medium">What changed</div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="rounded-lg border p-3">
                 <div className="mb-2 flex items-center gap-2">
                   <Badge variant="success">Original</Badge>
                   <span className="text-xs text-muted-foreground">genuine</span>
                 </div>
-                <DetailRow label={tamper.field}>
+                <DetailRow label={tamperInfo.field}>
                   <span className="hash-mono text-xs">
-                    {fieldVal(
-                      tamper.original.product as unknown as Record<string, unknown>
-                    )}
+                    {tamperInfo.originalValue}
                   </span>
                 </DetailRow>
                 <DetailRow label="Leaf">
-                  <HashDisplay value={tamper.original.leaf} />
+                  <HashDisplay value={tamperInfo.originalLeaf} />
                 </DetailRow>
               </div>
 
@@ -466,33 +460,20 @@ export function VerifyPage() {
                   <Badge variant="destructive">Tampered</Badge>
                   <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
                 </div>
-                <DetailRow label={tamper.field}>
+                <DetailRow label={tamperInfo.field}>
                   <span className="hash-mono text-xs text-destructive">
-                    {fieldVal(
-                      tamper.tampered.product as unknown as Record<string, unknown>
-                    )}
+                    {tamperInfo.newValue}
                   </span>
                 </DetailRow>
                 <DetailRow label="Leaf">
-                  {tamper.tampered.leaf ? (
-                    <HashDisplay value={tamper.tampered.leaf} />
-                  ) : (
-                    <span className="text-xs text-destructive">
-                      rejected (invalid)
-                    </span>
-                  )}
+                  <HashDisplay value={tamperInfo.tamperedLeaf} />
                 </DetailRow>
               </div>
             </div>
-
             <p className="border-l-2 border-destructive/40 pl-3 text-sm text-muted-foreground">
-              {tamper.explanation}
+              One changed field → a different leaf → the original proof rebuilds a
+              wrong root → it no longer matches the root anchored on-chain.
             </p>
-            {tamper.onChainError && (
-              <p className="text-sm text-warning">
-                on-chain check: {tamper.onChainError}
-              </p>
-            )}
           </CardContent>
         </Card>
       )}
