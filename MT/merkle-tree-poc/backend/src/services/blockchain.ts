@@ -161,6 +161,15 @@ export async function getBatchOnChain(batchId: string): Promise<{
 }
 
 /**
+ * Read a batch's lifecycle status straight from the contract.
+ * 0 = Active, 1 = Recalled, 2 = Revoked (enum ProductRegistry.BatchStatus).
+ */
+export async function getBatchStatusOnChain(batchId: string): Promise<number> {
+  const { contract } = await getChain();
+  return Number(await contract.getBatchStatus(batchId));
+}
+
+/**
  * Supersede an existing batch's root on-chain (batch versioning). Returns the
  * transaction details plus the new version number read back from the contract.
  */

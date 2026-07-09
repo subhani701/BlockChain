@@ -21,7 +21,9 @@ import {
 import {
   registerBatchOnChain,
   supersedeBatchOnChain,
-  chainStatus
+  chainStatus,
+  getBatchOnChain,
+  getBatchStatusOnChain
 } from "../services/blockchain";
 import { LEAF_SPEC_VERSION } from "../../../shared/validate";
 import type { Batch } from "../../../shared/types";
@@ -255,6 +257,53 @@ batchRouter.get("/:batchId/proofs", (req: Request, res: Response) => {
     proofs
   });
 });
+
+/**
+ * GET /batch/:batchId/onchain  — THE AUTHORITATIVE ROOT.
+ *
+ * Reads the batch's Merkle root + lifecycle status DIRECTLY FROM THE CONTRACT
+ * (not from the local store). A verifier MUST check a proof against this value,
+ * never against a root supplied by the product's QR — otherwise a counterfeiter
+ * can forge a self-consistent bundle (own tree, own root, own proof).
+ *
+ * NOTE: using this route puts THIS BACKEND in the trust path. A field verifier
+ * that wants a trustless check should read the chain itself
+ * (see frontend/src/lib/chain.ts).
+ *
+ * 404 = the batch was never registered on-chain (a strong counterfeit signal).
+ * 502 = the chain could not be reached (=> CANNOT_VERIFY, never a silent pass).
+ */
+batchRouter.get(
+  "/:batchId/onchain",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { batchId } = req.params;
+    try {
+      const [onchain, status] = await Promise.all([
+        getBatchOnChain(batchId),
+        getBatchStatusOnChain(batchId)
+      ]);
+      return res.json({
+        batchId: onchain.batchId,
+        merkleRoot: onchain.merkleRoot,
+        totalProducts: onchain.totalProducts,
+        version: onchain.version,
+        status, // 0 Active | 1 Recalled | 2 Revoked
+        source: "chain"
+      });
+    } catch (err) {
+      const detail = (err as Error).message;
+      // The contract reverts "ProductRegistry: unknown batch" when never registered.
+      if (/unknown batch/i.test(detail)) {
+        return res
+          .status(404)
+          .json({ error: `batch ${batchId} is not registered on-chain` });
+      }
+      return res
+        .status(502)
+        .json({ error: "could not read the chain", detail });
+    }
+  })
+);
 
 /**
  * GET /batch/:batchId/proof-pack  (Proof Data Availability)

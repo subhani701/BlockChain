@@ -127,6 +127,18 @@ export interface TamperResponse {
   onChainError?: string;
 }
 
+export interface AuthenticityResponse {
+  result: "AUTHENTIC" | "COUNTERFEIT" | "CANNOT_VERIFY";
+  checks: {
+    merkle_proof_valid: { passed: boolean; detail: string };
+    root_anchored_on_chain: { passed: boolean; detail: string };
+    batch_active: { passed: boolean; detail: string };
+  };
+  computed: { leaf: string; root: string };
+  onChain?: { merkleRoot: string; status: number; version: number };
+  warnings: string[];
+}
+
 export interface ChainStatus {
   connected: boolean;
   rpcUrl: string;
@@ -182,7 +194,23 @@ export const api = {
       products: HashedProduct[];
     }>(`/batch/${encodeURIComponent(batchId)}`),
 
-  getTree: (batchId: string) => http<TreeResponse>(`/batch/${batchId}/tree`),
+  getTree: (batchId: string) =>
+    http<TreeResponse>(`/batch/${encodeURIComponent(batchId)}/tree`),
+
+  /**
+   * Read the batch's root + status FROM THE CONTRACT (not the local store).
+   * Fallback for verifiers that can't reach an RPC directly — note this puts the
+   * backend in the trust path. Throws on 404 (never registered) / 502 (chain down).
+   */
+  getOnChainBatch: (batchId: string) =>
+    http<{
+      batchId: string;
+      merkleRoot: string;
+      totalProducts: number;
+      version: number;
+      status: number; // 0 Active | 1 Recalled | 2 Revoked
+      source: "chain";
+    }>(`/batch/${encodeURIComponent(batchId)}/onchain`),
 
   /** Self-contained, offline-verifiable proof pack (data availability export). */
   getProofPack: (batchId: string) =>
@@ -220,6 +248,23 @@ export const api = {
         batchId
       )}`
     ),
+
+  /**
+   * THE verification: recompute off-chain + compare to the on-chain root.
+   * Gas-free (a view read), 3-state verdict. No API key, writes nothing.
+   */
+  verifyAuthenticity: (batchId: string, serial: string) =>
+    http<AuthenticityResponse>("/verify/authenticity", {
+      method: "POST",
+      body: JSON.stringify({ batchId, serial })
+    }),
+
+  /** Verify a SUPPLIED product + proof (used by the tamper demo). */
+  verifyAuthenticityBundle: (batchId: string, product: Product, proof: string[]) =>
+    http<AuthenticityResponse>("/verify/authenticity", {
+      method: "POST",
+      body: JSON.stringify({ batchId, product, proof })
+    }),
 
   verifyOnChain: (batchId: string, serial: string) =>
     http<VerifyResponse>("/verify", {
