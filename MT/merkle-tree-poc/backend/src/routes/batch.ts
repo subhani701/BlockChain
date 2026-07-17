@@ -36,6 +36,7 @@ import {
 import { requireApiKey } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 import { asyncHandler } from "../middleware/error";
+import { broadcast } from "../services/events";
 import {
   createBatchSchema,
   registerBatchSchema,
@@ -146,6 +147,7 @@ batchRouter.post("/register", requireApiKey, validateBody(registerBatchSchema), 
     );
     batch.onChain = onChain;
     store.upsert(batch);
+    broadcast("chain:changed", { batchId: batch.batchId, kind: "registered" });
 
     return res.json({
       batchId: batch.batchId,
@@ -195,6 +197,7 @@ batchRouter.post(
       );
       updated.onChain = onChain;
       store.upsert(updated);
+      broadcast("chain:changed", { batchId, kind: "superseded" });
       return res.json({
         batchId,
         merkleRoot,

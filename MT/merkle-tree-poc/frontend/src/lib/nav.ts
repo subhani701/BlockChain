@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Boxes,
   GitBranch,
+  QrCode,
   ShieldCheck,
   ScanLine,
   BookOpen,
@@ -34,6 +35,12 @@ export const NAV: NavItem[] = [
     label: "Proof",
     description: "Generate a Merkle proof and visualize the path",
     icon: GitBranch
+  },
+  {
+    path: "/product-qr",
+    label: "Product QR",
+    description: "Select a product and get its scannable verification QR",
+    icon: QrCode
   },
   {
     path: "/verify",

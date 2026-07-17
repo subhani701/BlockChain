@@ -7,7 +7,12 @@
  */
 import { createApp } from "./server";
 import { config } from "./config";
-import { chainStatus } from "./services/blockchain";
+import {
+  chainStatus,
+  reconcileStoreWithChain,
+  startChainSubscriptions
+} from "./services/blockchain";
+import { broadcast } from "./services/events";
 import { logger } from "./logger";
 
 async function main(): Promise<void> {
@@ -22,6 +27,37 @@ async function main(): Promise<void> {
         { contract: status.contractAddress, rpcUrl: status.rpcUrl },
         "blockchain OK"
       );
+
+      // Clear any stale on-chain flags left over from a previous chain (e.g. a
+      // Ganache reset), so the store reflects the real anchoring state.
+      try {
+        const { checked, cleared } = await reconcileStoreWithChain();
+        if (cleared.length > 0) {
+          logger.warn(
+            { cleared },
+            `reconciled store: cleared ${cleared.length} stale on-chain flag(s)`
+          );
+        } else {
+          logger.info({ checked }, "store reconciled with chain (no stale flags)");
+        }
+      } catch (err) {
+        logger.warn(
+          { err: (err as Error).message },
+          "store reconcile skipped (chain read failed)"
+        );
+      }
+
+      // Real-time: subscribe to chain events and push them to browsers over SSE.
+      await startChainSubscriptions({
+        onChange: (batchId) => broadcast("chain:changed", { batchId }),
+        onStatus: async (connected) => {
+          try {
+            broadcast("chain:status", await chainStatus());
+          } catch {
+            broadcast("chain:status", { connected });
+          }
+        }
+      });
     } else {
       logger.warn(
         { error: status.error },

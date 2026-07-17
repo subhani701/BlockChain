@@ -8,6 +8,7 @@ import { App } from "./App";
 import { DashboardPage } from "./pages/DashboardPage";
 import { GenerateBatchPage } from "./pages/GenerateBatchPage";
 import { ProofPage } from "./pages/ProofPage";
+import { ProductQrPage } from "./pages/ProductQrPage";
 import { VerifyPage } from "./pages/VerifyPage";
 import { FieldVerifyPage } from "./pages/FieldVerifyPage";
 import { LearnPage } from "./pages/LearnPage";
@@ -24,6 +25,7 @@ const router = createBrowserRouter([
       { index: true, element: <DashboardPage /> },
       { path: "generate", element: <GenerateBatchPage /> },
       { path: "proof", element: <ProofPage /> },
+      { path: "product-qr", element: <ProductQrPage /> },
       { path: "verify", element: <VerifyPage /> },
       { path: "field-verify", element: <FieldVerifyPage /> },
       { path: "learn", element: <LearnPage /> }

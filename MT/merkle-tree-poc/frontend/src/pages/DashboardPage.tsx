@@ -70,8 +70,12 @@ function StatCard({
 }
 
 export function DashboardPage() {
-  const { chain } = useOutletContext<AppCtx>();
+  const { chain, chainRev } = useOutletContext<AppCtx>();
   const [batches, setBatches] = useState<BatchSummary[] | null>(null);
+  // Which batchIds are ACTUALLY anchored on the current chain (null = verifying).
+  // The store's `onChain` flag can be stale after a chain reset, so we don't trust
+  // it — we read each batch's status from the contract itself.
+  const [onChainIds, setOnChainIds] = useState<Set<string> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -81,6 +85,16 @@ export function DashboardPage() {
     try {
       const list = await api.listBatches();
       setBatches(list);
+      setOnChainIds(null);
+      const results = await Promise.all(
+        list.map((b) =>
+          api
+            .getOnChainBatch(b.batchId)
+            .then(() => b.batchId)
+            .catch(() => null)
+        )
+      );
+      setOnChainIds(new Set(results.filter((x): x is string => x !== null)));
       if (announce) toast.success("Dashboard refreshed");
     } catch (e) {
       setError((e as Error).message);
@@ -89,17 +103,22 @@ export function DashboardPage() {
     }
   }, []);
 
+  // Reload on mount and whenever the chain changes (real-time via SSE).
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, chainRev]);
 
   const totalProducts = (batches ?? []).reduce(
     (s, b) => s + b.totalProducts,
     0
   );
-  const anchored = (batches ?? []).filter((b) => b.onChain).length;
+  const anchored = (batches ?? []).filter((b) =>
+    onChainIds?.has(b.batchId)
+  ).length;
   const total = batches?.length ?? 0;
   const anchoredPct = total > 0 ? Math.round((anchored / total) * 100) : 0;
+  const verifying = onChainIds === null;
+  const isAnchored = (id: string) => onChainIds?.has(id) ?? false;
 
   return (
     <div>
@@ -154,9 +173,13 @@ export function DashboardPage() {
             />
             <StatCard
               label="Anchored Roots"
-              value={`${anchored}/${total}`}
+              value={verifying ? "…" : `${anchored}/${total}`}
               icon={Blocks}
-              hint={`${anchoredPct}% committed on-chain`}
+              hint={
+                verifying
+                  ? "checking chain…"
+                  : `${anchoredPct}% committed on-chain`
+              }
             />
             <StatCard
               label="Network"
@@ -268,17 +291,19 @@ export function DashboardPage() {
                       <HashDisplay value={b.merkleRoot} />
                     </TableCell>
                     <TableCell>
-                      {b.onChain ? (
+                      {verifying ? (
+                        <Badge variant="secondary">Checking…</Badge>
+                      ) : isAnchored(b.batchId) ? (
                         <Badge variant="success" className="gap-1">
                           <Blocks className="h-3 w-3" />
                           Anchored
                         </Badge>
                       ) : (
-                        <Badge variant="secondary">Pending</Badge>
+                        <Badge variant="secondary">Not anchored</Badge>
                       )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      {b.onChain ? (
+                      {isAnchored(b.batchId) && b.onChain ? (
                         <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
                           <Fuel className="h-3.5 w-3.5" />
                           {b.onChain.gasUsed.toLocaleString()}

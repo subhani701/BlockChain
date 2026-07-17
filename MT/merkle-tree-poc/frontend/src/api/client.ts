@@ -10,6 +10,9 @@ const BASE =
   (import.meta.env.VITE_API_BASE as string | undefined) ||
   "http://localhost:4000";
 
+/** Backend base URL — exported so the SSE EventSource can reach `/events`. */
+export const API_BASE = BASE;
+
 // Optional API key for protected (mutating / gas-spending) endpoints. When the
 // backend has API_KEYS set, these calls must send a matching Bearer token.
 // Resolution order: a runtime key saved in the browser (Settings) → VITE_API_KEY.

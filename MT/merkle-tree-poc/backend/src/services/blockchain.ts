@@ -12,6 +12,7 @@ import fs from "fs";
 import { ethers, Contract, JsonRpcProvider } from "ethers";
 import { config } from "../config";
 import { logger } from "../logger";
+import { store } from "./store";
 import type { OnChainInfo } from "../../../shared/types";
 
 interface ChainContext {
@@ -167,6 +168,128 @@ export async function getBatchOnChain(batchId: string): Promise<{
 export async function getBatchStatusOnChain(batchId: string): Promise<number> {
   const { contract } = await getChain();
   return Number(await contract.getBatchStatus(batchId));
+}
+
+/**
+ * Reconcile the off-chain store with the actual chain.
+ *
+ * The store caches an `onChain` record when a batch is anchored, but that record
+ * SURVIVES a chain reset (e.g. Ganache restart + re-migrate) — leaving the store
+ * claiming batches are registered when the fresh chain has none. This clears the
+ * stale flag for any batch the contract no longer knows about, so every surface
+ * (dashboard, product QR, verify) reflects the real anchoring state.
+ *
+ * Only clears on a DEFINITIVE "unknown batch" revert. On any other error (chain
+ * unreachable, RPC hiccup) it leaves the flag untouched — never guess a batch is
+ * gone just because we couldn't read the chain.
+ */
+let wsProvider: ethers.WebSocketProvider | null = null;
+let subsActive = false;
+
+/** http(s)://host:port → ws(s)://host:port (Ganache serves both on one port). */
+function toWsUrl(rpc: string): string {
+  return rpc.replace(/^https:\/\//i, "wss://").replace(/^http:\/\//i, "ws://");
+}
+
+function teardownWs(): void {
+  if (wsProvider) {
+    try {
+      wsProvider.removeAllListeners();
+      void wsProvider.destroy();
+    } catch {
+      /* ignore */
+    }
+    wsProvider = null;
+  }
+}
+
+/**
+ * Subscribe to ProductRegistry events over a WebSocket RPC and call `onChange`
+ * whenever a batch is registered / superseded / has its status changed — so the
+ * UI can update in real time instead of polling. Auto-reconnects if the socket
+ * drops (e.g. Ganache restart). `onStatus` reports the live connection state.
+ */
+export async function startChainSubscriptions(handlers: {
+  onChange: (batchId: string, kind: string) => void;
+  onStatus: (connected: boolean) => void;
+}): Promise<void> {
+  subsActive = true;
+
+  const connect = async (): Promise<void> => {
+    if (!subsActive) return;
+    try {
+      const { address } = await getChain();
+      const artifact = loadArtifact();
+      const url = toWsUrl(config.rpcUrl);
+      wsProvider = new ethers.WebSocketProvider(url);
+      const contract = new ethers.Contract(address, artifact.abi, wsProvider);
+
+      // 2nd arg of each event is the plaintext batchIdValue (the indexed batchId
+      // is only a hash in the topic).
+      await contract.on("BatchRegistered", (_id, batchIdValue) =>
+        handlers.onChange(String(batchIdValue), "registered")
+      );
+      await contract.on("BatchSuperseded", (_id, batchIdValue) =>
+        handlers.onChange(String(batchIdValue), "superseded")
+      );
+      await contract.on("BatchStatusChanged", (_id, batchIdValue) =>
+        handlers.onChange(String(batchIdValue), "status")
+      );
+
+      handlers.onStatus(true);
+      logger.info({ url }, "chain WS subscribed");
+
+      const sock = (wsProvider as unknown as { websocket?: any }).websocket;
+      if (sock) {
+        sock.onerror = () => {
+          /* the close handler drives reconnection */
+        };
+        sock.onclose = () => {
+          logger.warn("chain WS closed — reconnecting in 3s");
+          handlers.onStatus(false);
+          teardownWs();
+          if (subsActive) setTimeout(() => void connect(), 3000);
+        };
+      }
+    } catch (err) {
+      logger.warn(
+        { err: (err as Error).message },
+        "chain WS connect failed — retrying in 5s"
+      );
+      handlers.onStatus(false);
+      teardownWs();
+      if (subsActive) setTimeout(() => void connect(), 5000);
+    }
+  };
+
+  await connect();
+}
+
+export function stopChainSubscriptions(): void {
+  subsActive = false;
+  teardownWs();
+}
+
+export async function reconcileStoreWithChain(): Promise<{
+  checked: number;
+  cleared: string[];
+}> {
+  const batches = store.list();
+  const cleared: string[] = [];
+  for (const b of batches) {
+    if (!b.onChain) continue; // only batches the store thinks are anchored
+    try {
+      await getBatchOnChain(b.batchId); // resolves iff still on the current chain
+    } catch (err) {
+      if (/unknown batch/i.test((err as Error).message || "")) {
+        b.onChain = undefined;
+        store.upsert(b);
+        cleared.push(b.batchId);
+      }
+      // other errors (chain down) → leave the flag as-is
+    }
+  }
+  return { checked: batches.length, cleared };
 }
 
 /**

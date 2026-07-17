@@ -8,12 +8,15 @@ import { Outlet } from "react-router-dom";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { AppTopbar } from "@/components/layout/app-topbar";
 import { AppFooter } from "@/components/layout/app-footer";
-import { api, type ChainStatus } from "@/api/client";
+import { api, API_BASE, type ChainStatus } from "@/api/client";
 
 export interface AppCtx {
   activeBatch: string;
   setActiveBatch: (b: string) => void;
   chain: ChainStatus | null;
+  /** Increments whenever the chain changes (batch registered/superseded) so
+   *  screens can refresh in real time instead of polling. */
+  chainRev: number;
 }
 
 export function App() {
@@ -21,36 +24,47 @@ export function App() {
     () => localStorage.getItem("activeBatch") || ""
   );
   const [chain, setChain] = useState<ChainStatus | null>(null);
+  const [chainRev, setChainRev] = useState(0);
 
   useEffect(() => {
     if (activeBatch) localStorage.setItem("activeBatch", activeBatch);
   }, [activeBatch]);
 
-  // Poll chain status so the topbar badge stays fresh.
+  // Real-time chain updates via SSE (replaces polling). The backend pushes
+  // `chain:status` (badge) and `chain:changed` (a batch was anchored/superseded).
   useEffect(() => {
     let alive = true;
-    const load = () =>
-      api
-        .chainStatus()
-        .then((c) => alive && setChain(c))
-        .catch(
-          () =>
-            alive &&
-            setChain({
-              connected: false,
-              rpcUrl: "?",
-              error: "backend unreachable"
-            })
-        );
-    load();
-    const id = setInterval(load, 15000);
+
+    // Seed the badge immediately so it's correct before the first SSE frame.
+    api
+      .chainStatus()
+      .then((c) => alive && setChain(c))
+      .catch(
+        () =>
+          alive &&
+          setChain({ connected: false, rpcUrl: "?", error: "backend unreachable" })
+      );
+
+    const es = new EventSource(`${API_BASE}/events`);
+    es.addEventListener("chain:status", (e) => {
+      try {
+        if (alive) setChain(JSON.parse((e as MessageEvent).data));
+      } catch {
+        /* ignore malformed frame */
+      }
+    });
+    es.addEventListener("chain:changed", () => {
+      if (alive) setChainRev((r) => r + 1);
+    });
+    // EventSource auto-reconnects on transient drops; nothing to do on error.
+
     return () => {
       alive = false;
-      clearInterval(id);
+      es.close();
     };
   }, []);
 
-  const ctx: AppCtx = { activeBatch, setActiveBatch, chain };
+  const ctx: AppCtx = { activeBatch, setActiveBatch, chain, chainRev };
 
   return (
     <div className="flex min-h-screen bg-background">

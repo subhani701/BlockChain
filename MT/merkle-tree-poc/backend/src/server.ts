@@ -11,6 +11,7 @@ import pinoHttp from "pino-http";
 import { batchRouter } from "./routes/batch";
 import { proofRouter } from "./routes/proof";
 import { verifyRouter } from "./routes/verify";
+import { eventsRouter } from "./routes/events";
 import { errorHandler } from "./middleware/error";
 import { apiRateLimiter } from "./middleware/rate-limit";
 import { logger } from "./logger";
@@ -50,6 +51,7 @@ export function createApp(): Application {
   app.use("/batch", batchRouter);
   app.use("/proof", proofRouter);
   app.use("/verify", verifyRouter);
+  app.use("/events", eventsRouter);
 
   // 404 fallback.
   app.use((_req: Request, res: Response) =>
